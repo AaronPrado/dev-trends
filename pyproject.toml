@@ -16,6 +16,7 @@ dependencies = []
 dev = [
   "ruff>=0.6",
   "pytest>=8.0",
+  "pytest-mock>=3.14",
   "pre-commit>=3.7",
 ]
 
@@ -40,3 +41,8 @@ known-first-party = ["dev_trends"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers"
+
+dependencies = [
+  "pyspark>=3.5,<3.6",
+  "delta-spark>=3.2,<3.3",
+]
