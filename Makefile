@@ -1,6 +1,10 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help install lint format test check hooks up down pipeline clean
+COMPOSE := docker compose -f docker/docker-compose.yml
+
+TOPIC := github.push.raw
+
+.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -25,11 +29,11 @@ check: lint test  ## lint + test: puerta local equivalente a la CI
 hooks:  ## Pasa todos los hooks de pre-commit sobre el repo
 	pre-commit run --all-files
 
-up:  ## [Fase 2] Levanta el entorno local (Kafka, Spark) con Docker Compose
-	@echo "Pendiente: docker compose up -d (llega en la fase de Kafka)"
+up:  ## Levanta Kafka en local con Docker Compose
+	$(COMPOSE) up -d
 
-down:  ## [Fase 2] Detiene el entorno local
-	@echo "Pendiente: docker compose down (llega en la fase de Kafka)"
+down:  ## Detiene Kafka y limpia los contenedores
+	$(COMPOSE) down
 
 pipeline:  ## Lanza el pipeline batch. Uso: make pipeline DATE=2024-01-15 HOURS=0-0
 	python -m dev_trends.pipeline.batch --date $(DATE) --hours $(HOURS)
@@ -37,3 +41,17 @@ pipeline:  ## Lanza el pipeline batch. Uso: make pipeline DATE=2024-01-15 HOURS=
 clean:  ## Borra cachés de herramientas y artefactos de Python
 	rm -rf .ruff_cache .pytest_cache .mypy_cache .coverage htmlcov
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+topic:  ## Crea el topic de PushEvents
+	docker exec dev-trends-kafka /opt/kafka/bin/kafka-topics.sh \
+	  --bootstrap-server localhost:9092 --create --if-not-exists \
+	  --topic $(TOPIC) --partitions 1 --replication-factor 1
+
+produce:  ## Publica PushEvent a Kafka. Uso: make produce DATE=2024-01-15 HOURS=0-0
+	python -m dev_trends.ingestion.producer --date $(DATE) --hours $(HOURS) --topic $(TOPIC)
+
+stream-bronze:  ## Streaming Kafka -> Bronze (Delta)
+	python -m dev_trends.pipeline.streaming --stage bronze --topic $(TOPIC)
+
+stream-silver:  ## Streaming Bronze -> Silver (Delta)
+	python -m dev_trends.pipeline.streaming --stage silver

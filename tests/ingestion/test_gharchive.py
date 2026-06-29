@@ -35,6 +35,19 @@ def test_download_hour_success(mocker, tmp_path) -> None:
     assert dest.read_bytes() == b"fake gz content"
 
 
+def test_download_hour_sets_user_agent(mocker, tmp_path) -> None:
+    mock_resp = mocker.MagicMock()
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.read.return_value = b"gz"
+    mock_urlopen = mocker.patch("urllib.request.urlopen", return_value=mock_resp)
+
+    download_hour("https://data.gharchive.org/2024-01-15-10.json.gz", tmp_path / "f.json.gz")
+
+    request = mock_urlopen.call_args.args[0]
+    # GH Archive (Fastly) rechaza el UA por defecto de urllib con 403.
+    assert "dev-trends" in request.get_header("User-agent")
+
+
 def test_download_hour_404_returns_false(mocker, tmp_path) -> None:
     mocker.patch(
         "urllib.request.urlopen",

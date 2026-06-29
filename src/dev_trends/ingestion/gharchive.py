@@ -2,6 +2,7 @@ import logging
 import urllib.error
 import urllib.request
 from datetime import date
+from importlib.metadata import version
 from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession
@@ -11,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://data.gharchive.org"
 
-_RAW_SCHEMA = StructType(
+_USER_AGENT = f"dev-trends/{version('dev-trends')} (+https://github.com/AaronPrado/dev-trends)"
+
+RAW_SCHEMA = StructType(
     [
         StructField("id", StringType()),
         StructField("type", StringType()),
@@ -41,8 +44,9 @@ def download_hour(url: str, dest_path: Path) -> bool:
         urllib.error.URLError: Para errores de red.
     """
     tmp = dest_path.with_name(dest_path.name + ".tmp")
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
-        with urllib.request.urlopen(url, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=60) as response:
             tmp.write_bytes(response.read())
         tmp.replace(dest_path)
         return True
@@ -83,4 +87,4 @@ def download_range(
 
 def read_bronze(spark: SparkSession, paths: list[Path]) -> DataFrame:
     """Lee ficheros .json.gz de Bronze en un DataFrame de Spark."""
-    return spark.read.schema(_RAW_SCHEMA).json([str(p) for p in paths])
+    return spark.read.schema(RAW_SCHEMA).json([str(p) for p in paths])
