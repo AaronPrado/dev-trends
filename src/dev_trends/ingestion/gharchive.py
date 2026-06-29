@@ -14,7 +14,7 @@ _BASE_URL = "https://data.gharchive.org"
 
 _USER_AGENT = f"dev-trends/{version('dev-trends')} (+https://github.com/AaronPrado/dev-trends)"
 
-_RAW_SCHEMA = StructType(
+RAW_SCHEMA = StructType(
     [
         StructField("id", StringType()),
         StructField("type", StringType()),
@@ -87,4 +87,4 @@ def download_range(
 
 def read_bronze(spark: SparkSession, paths: list[Path]) -> DataFrame:
     """Lee ficheros .json.gz de Bronze en un DataFrame de Spark."""
-    return spark.read.schema(_RAW_SCHEMA).json([str(p) for p in paths])
+    return spark.read.schema(RAW_SCHEMA).json([str(p) for p in paths])

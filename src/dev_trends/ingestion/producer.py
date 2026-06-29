@@ -14,15 +14,14 @@ PUSH_EVENT_TYPE = "PushEvent"
 
 
 def extract_push_event(raw_line: bytes) -> tuple[bytes, bytes] | None:
-    """Convierte una línea cruda de GH Archive en un mensaje de Kafka.
+    """Convierte una línea de GH Archive en un mensaje de Kafka.
 
     Args:
-        raw_line: Una línea del .json.gz (un evento JSON en bytes).
+        raw_line: Una línea del .json.gz.
 
     Returns:
         (key, value) si la línea es un PushEvent, donde key = nombre del repo
-        en bytes (para particionar por repositorio) y value = la línea cruda
-        intacta. None si el evento no es un PushEvent.
+        en bytes y value = la línea cruda intacta. None si el evento no es un PushEvent.
 
     Raises:
         json.JSONDecodeError: si la línea no es JSON válido. Lo maneja el

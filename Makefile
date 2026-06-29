@@ -50,5 +50,8 @@ topic:  ## Crea el topic de PushEvents
 produce:  ## Publica PushEvent a Kafka. Uso: make produce DATE=2024-01-15 HOURS=0-0
 	python -m dev_trends.ingestion.producer --date $(DATE) --hours $(HOURS) --topic $(TOPIC)
 
-stream-bronze:  ## Streaming Kafka -> Bronze (Delta). Uso: make stream-bronze
-	python -m dev_trends.pipeline.streaming --topic $(TOPIC)
+stream-bronze:  ## Streaming Kafka -> Bronze (Delta)
+	python -m dev_trends.pipeline.streaming --stage bronze --topic $(TOPIC)
+
+stream-silver:  ## Streaming Bronze -> Silver (Delta)
+	python -m dev_trends.pipeline.streaming --stage silver

@@ -1,6 +1,8 @@
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.streaming import StreamingQuery
+
+from dev_trends.ingestion.gharchive import RAW_SCHEMA
 
 BRONZE_COLUMNS: list[str] = [
     "key",
@@ -24,7 +26,7 @@ def to_bronze(df: DataFrame) -> DataFrame:
             topic, partition, offset, timestamp).
 
     Returns:
-        DataFrame con las columnas de BRONZE_COLUMNS.
+        DataFrame con las columnas de BRONZE_COLUMNS (key/value como string).
     """
     return df.select(
         F.col("key").cast("string").alias("key"),
@@ -35,6 +37,21 @@ def to_bronze(df: DataFrame) -> DataFrame:
         F.col("timestamp").alias("kafka_timestamp"),
         F.current_timestamp().alias("ingested_at"),
     )
+
+
+def read_bronze_stream(spark: SparkSession, bronze_path: str) -> DataFrame:
+    """Abre un stream de lectura sobre la tabla Bronze (Delta como fuente)."""
+    return spark.readStream.format("delta").load(bronze_path)
+
+
+def parse_bronze_value(df: DataFrame) -> DataFrame:
+    """Decodifica el value crudo de Bronze al esquema anidado de GH Archive.
+
+    El value de Bronze es la línea JSON original (string). Aplica RAW_SCHEMA con
+    from_json y eleva los campos al nivel superior, dejando el DataFrame en la
+    forma que espera normalize_events (id, type, repo, created_at).
+    """
+    return df.select(F.from_json(F.col("value"), RAW_SCHEMA).alias("data")).select("data.*")
 
 
 def write_bronze_stream(df: DataFrame, output_path: str, checkpoint_path: str) -> StreamingQuery:
