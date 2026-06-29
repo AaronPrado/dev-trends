@@ -54,7 +54,10 @@ def derive_organization(df: DataFrame) -> DataFrame:
 def add_date_partitions(df: DataFrame) -> DataFrame:
     """Convierte created_at a timestamp y añade columnas de partición year/month/day."""
     return (
-        df.withColumn("created_at", F.to_timestamp(F.col("created_at")))
+        df.withColumn(
+            "created_at",
+            F.to_timestamp(F.col("created_at"), "yyyy-MM-dd'T'HH:mm:ss'Z'"),
+        )
         .withColumn("year", F.year(F.col("created_at")))
         .withColumn("month", F.month(F.col("created_at")))
         .withColumn("day", F.dayofmonth(F.col("created_at")))
@@ -63,7 +66,7 @@ def add_date_partitions(df: DataFrame) -> DataFrame:
 
 def attach_technology(df: DataFrame, mapping: DataFrame) -> DataFrame:
     """Filtra y etiqueta eventos por tecnología."""
-    return df.join(mapping, on="repository", how="inner")
+    return df.join(F.broadcast(mapping), on="repository", how="inner")
 
 
 def normalize_events(df: DataFrame, mapping: DataFrame) -> DataFrame:

@@ -5,10 +5,20 @@ from datetime import date
 from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql.types import StringType, StructField, StructType
 
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://data.gharchive.org"
+
+_RAW_SCHEMA = StructType(
+    [
+        StructField("id", StringType()),
+        StructField("type", StringType()),
+        StructField("repo", StructType([StructField("name", StringType())])),
+        StructField("created_at", StringType()),
+    ]
+)
 
 
 def build_url(event_date: date, hour: int) -> str:
@@ -30,15 +40,20 @@ def download_hour(url: str, dest_path: Path) -> bool:
         urllib.error.HTTPError: Para errores HTTP distintos de 404.
         urllib.error.URLError: Para errores de red.
     """
+    tmp = dest_path.with_name(dest_path.name + ".tmp")
     try:
-        with urllib.request.urlopen(url) as response:
-            dest_path.write_bytes(response.read())
+        with urllib.request.urlopen(url, timeout=60) as response:
+            tmp.write_bytes(response.read())
+        tmp.replace(dest_path)
         return True
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             logger.warning("Hora no disponible en GH Archive (404): %s", url)
             return False
         raise
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
 
 
 def download_range(
@@ -67,9 +82,5 @@ def download_range(
 
 
 def read_bronze(spark: SparkSession, paths: list[Path]) -> DataFrame:
-    """Lee ficheros .json.gz de Bronze en un DataFrame de Spark.
-
-    Spark infiere el esquema y descomprime gzip automáticamente.
-    Cada línea del fichero es un evento JSON (JSONL).
-    """
-    return spark.read.json([str(p) for p in paths])
+    """Lee ficheros .json.gz de Bronze en un DataFrame de Spark."""
+    return spark.read.schema(_RAW_SCHEMA).json([str(p) for p in paths])

@@ -31,12 +31,9 @@ up:  ## [Fase 2] Levanta el entorno local (Kafka, Spark) con Docker Compose
 down:  ## [Fase 2] Detiene el entorno local
 	@echo "Pendiente: docker compose down (llega en la fase de Kafka)"
 
-pipeline:  ## [Fase 1] Lanza el pipeline batch de Spark
-	@echo "Pendiente: ejecutar src/dev_trends/pipeline/batch.py (llega en la fase de Spark)"
+pipeline:  ## Lanza el pipeline batch. Uso: make pipeline DATE=2024-01-15 HOURS=0-0
+	python -m dev_trends.pipeline.batch --date $(DATE) --hours $(HOURS)
 
 clean:  ## Borra cachés de herramientas y artefactos de Python
 	rm -rf .ruff_cache .pytest_cache .mypy_cache .coverage htmlcov
 	find . -type d -name __pycache__ -exec rm -rf {} +
-
-pipeline:  ## Lanza el pipeline batch. Uso: make pipeline DATE=2024-01-15 HOURS=0-0
-	python -m dev_trends.pipeline.batch --date $(DATE) --hours $(HOURS)
