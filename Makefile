@@ -37,3 +37,6 @@ pipeline:  ## [Fase 1] Lanza el pipeline batch de Spark
 clean:  ## Borra cachés de herramientas y artefactos de Python
 	rm -rf .ruff_cache .pytest_cache .mypy_cache .coverage htmlcov
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+pipeline:  ## Lanza el pipeline batch. Uso: make pipeline DATE=2024-01-15 HOURS=0-0
+	python -m dev_trends.pipeline.batch --date $(DATE) --hours $(HOURS)
