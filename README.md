@@ -71,10 +71,11 @@ GH Archive ──▶ Kafka ──▶ Spark ──▶ S3 / Delta (medallion) ─�
 Construcción por fases. El orden prioriza las tecnologías núcleo y deja un
 pipeline funcional de extremo a extremo lo antes posible.
 
-- [ ] **Fase 1 — Spark (batch):** ingesta de ficheros de GH Archive, parseo,
+- [x] **Fase 1 — Spark (batch):** ingesta de ficheros de GH Archive, parseo,
       normalización a Silver y agregación a Gold.
-- [ ] **Fase 2 — Kafka + streaming:** ingesta desacoplada y migración a Spark
-      Structured Streaming.
+- [x] **Fase 2 — Kafka + streaming:** ingesta vía Kafka y migración a Spark
+      Structured Streaming (Kafka → Bronze → Silver, con trigger `availableNow`).
+      La agregación a Gold se reserva para dbt (Fase 3).
 - [ ] **Fase 3 — dbt:** modelado de la capa Gold (dimensiones y hechos).
 - [ ] **Fase 4 — Terraform:** infraestructura AWS como código.
 - [ ] **Dashboard:** visualización en Streamlit.
@@ -100,6 +101,35 @@ un dashboard analítico en Power BI.
 
 > Las credenciales de AWS **nunca** se versionan. Consulta `.gitignore` y usa un
 > fichero `.env` local (excluido del control de versiones).
+
+### Flujo local (V1, streaming)
+
+El pipeline de streaming corre en local sobre Kafka (Docker) y Spark. El esquema
+medallion se construye en dos *queries* de streaming encadenadas (Kafka → Bronze,
+Bronze → Silver):
+
+```bash
+make up                              # levanta Kafka (KRaft) en Docker
+make topic                           # crea el topic github.push.raw
+
+# Ingesta: publica los PushEvent de una hora de GH Archive en Kafka
+make produce DATE=2024-01-15 HOURS=0-0
+
+# Streaming Kafka → Bronze → Silver (Delta)
+make stream-bronze
+make stream-silver
+
+make down                            # detiene Kafka
+```
+
+> Se desarrolla con **1 hora** de datos; el mismo flujo escala a 1 día o más
+> cambiando solo `DATE`/`HOURS`, sin tocar la lógica de transformación.
+
+El pipeline **batch** original (Fase 1) sigue disponible como alternativa:
+
+```bash
+make pipeline DATE=2024-01-15 HOURS=0-0
+```
 
 ---
 
