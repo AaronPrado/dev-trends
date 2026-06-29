@@ -24,6 +24,7 @@ def test_build_url_hour_no_zero_padding() -> None:
 
 def test_download_hour_success(mocker, tmp_path) -> None:
     mock_resp = mocker.MagicMock()
+    mock_resp.__enter__.return_value = mock_resp  # with ... as response → response es mock_resp
     mock_resp.read.return_value = b"fake gz content"
     mocker.patch("urllib.request.urlopen", return_value=mock_resp)
 
@@ -37,9 +38,7 @@ def test_download_hour_success(mocker, tmp_path) -> None:
 def test_download_hour_404_returns_false(mocker, tmp_path) -> None:
     mocker.patch(
         "urllib.request.urlopen",
-        side_effect=urllib.error.HTTPError(
-            url="", code=404, msg="Not Found", hdrs=None, fp=None
-        ),
+        side_effect=urllib.error.HTTPError(url="", code=404, msg="Not Found", hdrs=None, fp=None),
     )
     dest = tmp_path / "missing.json.gz"
     result = download_hour("https://data.gharchive.org/2024-01-15-10.json.gz", dest)
@@ -77,8 +76,18 @@ def test_download_range_creates_dest_dir(mocker, tmp_path) -> None:
 
 def test_read_bronze_counts_events(spark: SparkSession, tmp_path) -> None:
     events = [
-        {"id": "1", "type": "PushEvent", "repo": {"name": "apache/airflow"}, "created_at": "2024-01-15T10:00:00Z"},
-        {"id": "2", "type": "WatchEvent", "repo": {"name": "dbt-labs/dbt-core"}, "created_at": "2024-01-15T10:00:01Z"},
+        {
+            "id": "1",
+            "type": "PushEvent",
+            "repo": {"name": "apache/airflow"},
+            "created_at": "2024-01-15T10:00:00Z",
+        },
+        {
+            "id": "2",
+            "type": "WatchEvent",
+            "repo": {"name": "dbt-labs/dbt-core"},
+            "created_at": "2024-01-15T10:00:01Z",
+        },
     ]
     gz_path = tmp_path / "2024-01-15-10.json.gz"
     with gzip.open(gz_path, "wt", encoding="utf-8") as f:

@@ -73,4 +73,3 @@ def read_bronze(spark: SparkSession, paths: list[Path]) -> DataFrame:
     Cada línea del fichero es un evento JSON (JSONL).
     """
     return spark.read.json([str(p) for p in paths])
-    

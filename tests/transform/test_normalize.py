@@ -20,13 +20,15 @@ from dev_trends.transform.technologies import build_technology_mapping
 @pytest.fixture
 def raw_df(spark: SparkSession):
     """DataFrame con el esquema anidado del JSON crudo de GH Archive."""
-    schema = StructType([
-        StructField("id", StringType()),
-        StructField("type", StringType()),
-        StructField("repo", StructType([StructField("name", StringType())])),
-        StructField("created_at", StringType()),
-        StructField("public", StringType()),
-    ])
+    schema = StructType(
+        [
+            StructField("id", StringType()),
+            StructField("type", StringType()),
+            StructField("repo", StructType([StructField("name", StringType())])),
+            StructField("created_at", StringType()),
+            StructField("public", StringType()),
+        ]
+    )
     data = [
         ("1", "PushEvent", ("apache/airflow",), "2024-01-15T10:00:00Z", "true"),
         ("2", "WatchEvent", ("dbt-labs/dbt-core",), "2024-01-15T11:30:00Z", "true"),
@@ -44,7 +46,9 @@ def flat_df(spark: SparkSession):
         ("3", "CreateEvent", "some/other-repo", "2024-01-15T12:00:00Z"),
         ("4", "PullRequestEvent", "dagster-io/dagster", "2024-01-15T13:00:00Z"),
     ]
-    return spark.createDataFrame(data, schema=["event_id", "event_type", "repository", "created_at"])
+    return spark.createDataFrame(
+        data, schema=["event_id", "event_type", "repository", "created_at"]
+    )
 
 
 # --- select_raw_fields ---
