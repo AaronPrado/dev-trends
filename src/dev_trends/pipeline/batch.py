@@ -6,6 +6,7 @@ from pyspark.sql import SparkSession
 
 from dev_trends.aggregate.gold import aggregate_to_gold
 from dev_trends.ingestion.gharchive import download_range, read_bronze
+from dev_trends.spark_session import build_spark
 from dev_trends.storage.silver import write_silver
 from dev_trends.transform.normalize import normalize_events
 from dev_trends.transform.technologies import build_technology_mapping
@@ -14,12 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_spark() -> SparkSession:
-    from delta import configure_spark_with_delta_pip
-
-    builder = SparkSession.builder.appName("dev-trends-batch").config(
-        "spark.sql.shuffle.partitions", "4"
-    )
-    return configure_spark_with_delta_pip(builder).getOrCreate()
+    return build_spark("dev-trends-batch")
 
 
 def run_batch(
