@@ -80,7 +80,10 @@ pipeline funcional de extremo a extremo lo antes posible.
 - [x] **Fase 3 — dbt:** modelado de la capa Gold como *star schema* (dimensiones
       `dim_technology`, `dim_date`, `dim_event_type`, `dim_source` y hecho
       `fact_github_activity`) sobre Silver, con tests de dbt.
-- [ ] **Fase 4 — Terraform:** infraestructura AWS como código.
+- [x] **Fase 4 — Terraform:** infraestructura AWS como código (S3 del medallion,
+      Glue Data Catalog, workgroup de Athena con tope de escaneo, IAM de mínimo
+      privilegio y alerta de presupuesto). Conectar el pipeline a S3/Athena queda
+      como siguiente paso.
 - [ ] **Dashboard:** visualización en Streamlit.
 
 ### Ampliaciones futuras
@@ -99,6 +102,7 @@ un dashboard analítico en Power BI.
 
 - Docker y Docker Compose
 - Python 3.11+
+- Terraform 1.6+ (para aprovisionar la infraestructura AWS)
 - Una cuenta de AWS (las capas de almacenamiento usan el free tier)
 - Credenciales de AWS configuradas (variables de entorno o `~/.aws/credentials`)
 
@@ -151,6 +155,35 @@ make dbt-parse    # valida el proyecto sin conexión (igual que la CI)
 > Las rutas se derivan de `DEV_TRENDS_DATA_ROOT` (el `Makefile` la calcula desde la
 > raíz del repo)
 
+### Infraestructura AWS con Terraform (Fase 4)
+
+La infraestructura de almacenamiento y consulta se declara como código en `infra/`:
+los buckets S3 del medallion y de resultados de Athena, la base de datos del Glue
+Data Catalog, el workgroup de Athena (con tope de datos escaneados como guarda de
+coste), un usuario y una política IAM de mínimo privilegio para el pipeline, y una
+alerta de presupuesto mensual.
+
+```bash
+cd infra
+cp example.tfvars terraform.tfvars   # y pon tu email para la alerta de presupuesto
+terraform init
+terraform plan
+terraform apply
+```
+
+> Requiere credenciales de AWS con permisos para crear estos recursos. El estado de
+> Terraform (`terraform.tfstate`), el `terraform.tfvars` y cualquier `*.tfvars` con
+> valores propios **no se versionan**; sí se versiona `example.tfvars` como plantilla.
+
+Para revisar el proyecto **sin credenciales** (igual que la CI):
+
+```bash
+cd infra
+terraform fmt -check
+terraform init -backend=false
+terraform validate
+```
+
 ---
 
 ## Calidad de código
@@ -161,7 +194,7 @@ El proyecto sigue prácticas estándar de la industria:
 - Tests con `pytest`
 - Hooks de `pre-commit`
 - Tareas comunes automatizadas con `Makefile`
-- Integración continua con GitHub Actions (lint + tests en cada push/PR)
+- Integración continua con GitHub Actions (lint, tests y validación de Terraform en cada push/PR)
 
 ---
 
