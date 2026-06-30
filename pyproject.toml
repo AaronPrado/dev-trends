@@ -11,7 +11,10 @@ requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }
 authors = [{ name = "AaronPrado", email = "aaronpradodarriba@gmail.com" }]
 dependencies = [
-  "pyspark>=3.5,<3.6",
+  # pyspark 3.5.6+ rompe el overwrite sobre Delta por un TableCapabilityCheck
+  # más estricto; se fija por debajo hasta que Delta lo soporte.
+  # Afecta a dbt (CREATE OR REPLACE) y a cualquier .mode("overwrite").
+  "pyspark>=3.5,<3.5.6",
   "delta-spark>=3.2,<3.3",
   "confluent-kafka>=2.3,<3.0",
 ]
@@ -22,6 +25,8 @@ dev = [
   "pytest>=8.0",
   "pytest-mock>=3.14",
   "pre-commit>=3.7",
+  "dbt-spark[session]>=1.8,<2.0",
+  "dbt-core>=1.11,<1.12a0",
 ]
 
 [tool.setuptools.packages.find]
