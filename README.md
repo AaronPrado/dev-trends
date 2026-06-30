@@ -71,12 +71,15 @@ GH Archive ──▶ Kafka ──▶ Spark ──▶ S3 / Delta (medallion) ─�
 Construcción por fases. El orden prioriza las tecnologías núcleo y deja un
 pipeline funcional de extremo a extremo lo antes posible.
 
-- [x] **Fase 1 — Spark (batch):** ingesta de ficheros de GH Archive, parseo,
-      normalización a Silver y agregación a Gold.
+- [x] **Fase 1 — Spark (batch):** ingesta de ficheros de GH Archive, parseo y
+      normalización a Silver. (La agregación a Gold inicial era provisional; la
+      asume dbt en la Fase 3.)
 - [x] **Fase 2 — Kafka + streaming:** ingesta vía Kafka y migración a Spark
       Structured Streaming (Kafka → Bronze → Silver, con trigger `availableNow`).
       La agregación a Gold se reserva para dbt (Fase 3).
-- [ ] **Fase 3 — dbt:** modelado de la capa Gold (dimensiones y hechos).
+- [x] **Fase 3 — dbt:** modelado de la capa Gold como *star schema* (dimensiones
+      `dim_technology`, `dim_date`, `dim_event_type`, `dim_source` y hecho
+      `fact_github_activity`) sobre Silver, con tests de dbt.
 - [ ] **Fase 4 — Terraform:** infraestructura AWS como código.
 - [ ] **Dashboard:** visualización en Streamlit.
 
@@ -130,6 +133,23 @@ El pipeline **batch** original (Fase 1) sigue disponible como alternativa:
 ```bash
 make pipeline DATE=2024-01-15 HOURS=0-0
 ```
+
+> El pipeline batch produce **Silver**; la agregación a Gold la construye dbt.
+
+### Modelado analítico con dbt (Fase 3)
+
+dbt construye la capa **Gold** como *star schema* sobre el Silver ya escrito, en
+local con el adapter `dbt-spark` (método `session`). El resultado aterriza en
+`data/gold/` como tablas Delta (las dimensiones y el hecho `fact_github_activity`),
+que responden la pregunta de V1: *evolución mensual de actividad de desarrollo*.
+
+```bash
+make dbt-build    # seeds + modelos + tests de dbt, todo en un proceso
+make dbt-parse    # valida el proyecto sin conexión (igual que la CI)
+```
+
+> Las rutas se derivan de `DEV_TRENDS_DATA_ROOT` (el `Makefile` la calcula desde la
+> raíz del repo)
 
 ---
 
