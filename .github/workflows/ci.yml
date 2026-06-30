@@ -46,3 +46,24 @@ jobs:
 
       - name: dbt (parse)
         run: make dbt-parse
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.7"
+
+      - name: Formato (check)
+        run: terraform fmt -check -recursive
+
+      - name: Init (sin backend, sin credenciales)
+        run: terraform init -backend=false
+
+      - name: Validate
+        run: terraform validate
