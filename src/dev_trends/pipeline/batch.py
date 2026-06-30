@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pyspark.sql import SparkSession
 
-from dev_trends.aggregate.gold import aggregate_to_gold
 from dev_trends.ingestion.gharchive import download_range, read_bronze
 from dev_trends.spark_session import build_spark
 from dev_trends.storage.silver import write_silver
@@ -22,16 +21,16 @@ def run_batch(
     event_date: date,
     bronze_dir: Path,
     silver_path: str,
-    gold_path: str,
     hours: range = range(24),
 ) -> None:
-    """Ejecuta el pipeline batch para una fecha: descarga → Silver → Gold.
+    """Ejecuta el pipeline batch para una fecha: descarga → Silver.
+
+    La agregación a Gold ya no vive aquí: la construye dbt sobre Silver (Paso 3).
 
     Args:
         event_date: Fecha a procesar.
         bronze_dir: Directorio donde aterrizar los .json.gz (Bronze local).
         silver_path: Ruta raíz de la capa Silver (local o s3://).
-        gold_path: Ruta raíz de la capa Gold provisional (local o s3://).
         hours: Rango de horas a intentar (por defecto las 24 del día).
     """
     spark = _build_spark()
@@ -47,20 +46,16 @@ def run_batch(
     write_silver(silver_df, silver_path)
     logger.info("Silver escrito para %s", event_date)
 
-    (aggregate_to_gold(silver_df).write.format("delta").mode("overwrite").save(gold_path))
-    logger.info("Gold provisional escrito para %s", event_date)
-
 
 if __name__ == "__main__":
     import argparse
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    parser = argparse.ArgumentParser(description="Pipeline batch GH Archive → Silver → Gold")
+    parser = argparse.ArgumentParser(description="Pipeline batch GH Archive → Silver")
     parser.add_argument("--date", required=True, help="Fecha a procesar (YYYY-MM-DD)")
     parser.add_argument("--bronze-dir", default="data/bronze")
     parser.add_argument("--silver-path", default="data/silver")
-    parser.add_argument("--gold-path", default="data/gold")
     parser.add_argument("--hours", default="0-23", help="Rango de horas, e.g. '0-0' para 1 hora")
     args = parser.parse_args()
 
@@ -69,6 +64,5 @@ if __name__ == "__main__":
         event_date=date.fromisoformat(args.date),
         bronze_dir=Path(args.bronze_dir),
         silver_path=args.silver_path,
-        gold_path=args.gold_path,
         hours=range(start, end + 1),
     )
