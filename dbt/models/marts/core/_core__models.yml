@@ -1,0 +1,8 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: "Dimensión de fecha a grano día, acotada al rango cargado. Conformada (compartida por todos los hechos)."
+    columns:
+      - name: date_day
+        tests: [not_null, unique]

@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: stg_github_events
+    description: "Eventos normalizados de Silver (un evento por fila), preparados para el modelado dimensional."
+    columns:
+      - name: event_id
+        tests: [not_null, unique]
+      - name: technology
+        tests: [not_null]
+      - name: event_type
+        tests: [not_null]

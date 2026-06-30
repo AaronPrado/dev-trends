@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: fact_github_activity
+    description: "Conteo de eventos de actividad por fecha, tecnología, tipo de evento y fuente (grano diario)."
+    columns:
+      - name: activity_key
+        tests: [not_null, unique]
+      - name: activity_date
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: technology
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology')
+                field: technology
+      - name: event_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["push", "pull_request", "release", "watch"]
+          - relationships:
+              arguments:
+                to: ref('dim_event_type')
+                field: event_type
+      - name: source
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_source')
+                field: source
+      - name: event_count
+        tests: [not_null]

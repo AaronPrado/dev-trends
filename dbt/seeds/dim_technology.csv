@@ -1,0 +1,6 @@
+technology,technology_name,category,github_repo,pypi_package
+airflow,Apache Airflow,data_engineering,apache/airflow,apache-airflow
+spark,Apache Spark,data_engineering,apache/spark,pyspark
+dbt,dbt,data_engineering,dbt-labs/dbt-core,dbt-core
+dagster,Dagster,data_engineering,dagster-io/dagster,dagster
+prefect,Prefect,data_engineering,PrefectHQ/prefect,prefect
