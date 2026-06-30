@@ -8,6 +8,8 @@ DATA_ROOT := $(CURDIR)/data
 
 DBT := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
+TF := terraform -chdir=infra
+
 .PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze dbt-build dbt-test dbt-parse
 
 help:  ## Muestra esta ayuda
@@ -68,3 +70,14 @@ dbt-test:  ## Corre solo los tests de dbt
 
 dbt-parse:  ## Valida el proyecto dbt sin conexión (refs, Jinja, YAML)
 	cd dbt && $(DBT) parse --profiles-dir .
+
+tf-validate:  ## Valida la infra Terraform sin credenciales (lo que corre la CI)
+	$(TF) fmt -check
+	$(TF) init -backend=false
+	$(TF) validate
+
+tf-plan:  ## Calcula el plan de Terraform (requiere credenciales AWS)
+	$(TF) plan
+
+tf-apply:  ## Aplica la infra Terraform (requiere credenciales AWS)
+	$(TF) apply
