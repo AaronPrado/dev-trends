@@ -1,0 +1,5 @@
+event_type,event_type_name
+push,Push
+pull_request,Pull Request
+release,Release
+watch,Watch

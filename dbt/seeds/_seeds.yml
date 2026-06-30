@@ -1,0 +1,18 @@
+version: 2
+
+seeds:
+  - name: dim_technology
+    description: "Catálogo curado de tecnologías monitorizadas y su metadato (clave: technology)."
+    columns:
+      - name: technology
+        tests: [not_null, unique]
+  - name: dim_event_type
+    description: "Tipos de evento normalizados; conformada, compartida por todos los hechos."
+    columns:
+      - name: event_type
+        tests: [not_null, unique]
+  - name: dim_source
+    description: "Fuentes de datos; conformada, compartida por todos los hechos."
+    columns:
+      - name: source
+        tests: [not_null, unique]
