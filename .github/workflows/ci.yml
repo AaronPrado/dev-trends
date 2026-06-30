@@ -43,3 +43,6 @@ jobs:
 
       - name: Tests (pytest)
         run: make test
+
+      - name: dbt (parse)
+        run: make dbt-parse

@@ -8,7 +8,7 @@ DATA_ROOT := $(CURDIR)/data
 
 DBT := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
-.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze dbt-build dbt-test
+.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze dbt-build dbt-test dbt-parse
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -65,3 +65,6 @@ dbt-build:  ## Construye el proyecto dbt (seeds + modelos + tests) en un solo pr
 
 dbt-test:  ## Corre solo los tests de dbt
 	cd dbt && $(DBT) test --profiles-dir .
+
+dbt-parse:  ## Valida el proyecto dbt sin conexión (refs, Jinja, YAML)
+	cd dbt && $(DBT) parse --profiles-dir .
