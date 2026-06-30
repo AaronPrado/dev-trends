@@ -17,3 +17,8 @@ output "athena_workgroup" {
   description = "Nombre del workgroup de Athena."
   value       = aws_athena_workgroup.main.name
 }
+
+output "pipeline_iam_user" {
+  description = "Usuario IAM del pipeline. Sus access keys se crean a mano (no en Terraform)."
+  value       = aws_iam_user.pipeline.name
+}
