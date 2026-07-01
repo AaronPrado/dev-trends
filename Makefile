@@ -12,7 +12,7 @@ DBT_PARSE := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
 TF := terraform -chdir=infra
 
-.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register
+.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register dashboard
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -94,3 +94,6 @@ tf-apply:  ## Aplica la infra Terraform (requiere credenciales AWS)
 
 athena-register: guard-DEV_TRENDS_S3_BUCKET  ## Registra el Gold (Delta) en Glue para Athena
 	AWS_PROFILE=dev-trends-pipeline scripts/athena_register_gold.sh
+
+dashboard:  ## Lanza el dashboard Streamlit (lee de Athena)
+	AWS_PROFILE=dev-trends-pipeline streamlit run dashboard/app.py

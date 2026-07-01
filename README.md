@@ -6,8 +6,10 @@
 > distribuido, arquitectura medallion sobre un data lake en AWS y modelado
 > analítico.
 
-> **Estado: en construcción (V1).** Este repositorio se desarrolla por fases.
-> Más abajo se detalla qué está implementado y qué está planificado.
+> **Estado: V1 completa.** Pipeline de punta a punta con datos reales: GH Archive →
+> Kafka → Spark Structured Streaming → Silver/Gold en S3 (Delta) → dbt → Athena →
+> Streamlit. Las ampliaciones (más fuentes, más tecnologías, calidad de datos,
+> observabilidad) quedan para siguientes fases.
 
 ---
 
@@ -64,6 +66,24 @@ GH Archive ──▶ Kafka ──▶ Spark ──▶ S3 / Delta (medallion) ─�
 - **Silver:** eventos normalizados y filtrados (un evento por fila, tipado).
 - **Gold:** agregados analíticos por tecnología y periodo, modelados con dbt.
 
+### Esquema Silver
+
+Un evento por fila, particionado por fecha (`year`/`month`/`day`). Congelado desde
+la Fase 1 para que dbt pudiera construirse encima sin romper capas anteriores:
+
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `event_id` | string | Id del evento en GitHub, único. |
+| `technology` | string | Tecnología asociada al repositorio (`airflow`, `spark`, `dbt`, `dagster`, `prefect`). |
+| `event_type` | string | Tipo de evento normalizado (`push`, `pull_request`, `release`, `watch`). |
+| `repository` | string | Repositorio de origen (`org/repo`). |
+| `organization` | string | Organización, derivada de `repository`. |
+| `created_at` | timestamp | Momento del evento en GitHub. |
+| `year` / `month` / `day` | int | Partición derivada de `created_at`. |
+
+No incluye el actor del evento (PII, y no aporta a la pregunta de actividad por
+tecnología).
+
 ---
 
 ## Estado del proyecto
@@ -86,7 +106,9 @@ pipeline funcional de extremo a extremo lo antes posible.
 - [x] **Cutover a AWS:** el pipeline escribe Silver y Gold en S3 (Delta) vía `s3a`;
       el Gold se registra en el Glue Data Catalog y se consulta desde Athena, que
       lee Delta de forma nativa (sin generar manifiestos).
-- [ ] **Dashboard:** visualización en Streamlit.
+- [x] **Dashboard:** visualización en Streamlit, con la evolución diaria de actividad
+      por tecnología y el total por tecnología para el rango seleccionado, leyendo de
+      Athena.
 
 ### Ampliaciones futuras
 
@@ -151,7 +173,7 @@ make pipeline DATE=2024-01-15 HOURS=0-0
 dbt construye la capa **Gold** como *star schema* sobre el Silver ya escrito, con el
 adapter `dbt-spark` (método `session`). Las dimensiones y el hecho
 `fact_github_activity` se materializan como tablas Delta en **S3**, y responden la
-pregunta de V1: *evolución mensual de actividad de desarrollo*.
+pregunta de V1: *evolución diaria de actividad de desarrollo*.
 
 ```bash
 export DEV_TRENDS_S3_BUCKET=<bucket-medallion>   # p. ej. dev-trends-medallion-<account_id>
@@ -169,11 +191,31 @@ El Gold en S3 se registra en el Glue Data Catalog para consultarlo desde Athena,
 lee Delta de forma nativa (sin generar manifiestos):
 
 ```bash
-make athena-register    # registra las tablas Gold en Glue (idempotente)
+make athena-register    # registra las tablas Gold en Glue (solo la primera vez)
 ```
 
-A partir de ahí Athena responde la pregunta mensual con un rollup del hecho por
-`dim_date`, dentro del tope de datos escaneados del workgroup.
+> El registro es de **una sola vez**: tras cada `dbt build` posterior, Athena ya lee
+> la versión nueva de cada tabla directamente del log de transacciones de Delta, sin
+> necesidad de volver a registrarla.
+
+A partir de ahí Athena responde la pregunta de V1 agregando el hecho por día y
+tecnología, dentro del tope de datos escaneados del workgroup.
+
+### Dashboard
+
+Un dashboard en Streamlit, en local, lee la capa Gold desde Athena y muestra la
+evolución diaria de actividad por tecnología para un rango de fechas seleccionable,
+con el total de eventos por tecnología en ese rango:
+
+```bash
+make dashboard
+```
+
+> Usa el perfil AWS `dev-trends-pipeline` y el mismo workgroup/base de datos de
+> Athena que el resto del pipeline. La consulta se cachea en la sesión de Streamlit
+> para no volver a escanear datos en cada interacción.
+
+![Dashboard: evolución diaria de actividad de desarrollo](docs/dashboard-streamlit.png)
 
 ### Infraestructura AWS con Terraform (Fase 4)
 
