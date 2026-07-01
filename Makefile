@@ -12,7 +12,7 @@ DBT_PARSE := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
 TF := terraform -chdir=infra
 
-.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze dbt-build dbt-test dbt-parse
+.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -63,6 +63,11 @@ stream-bronze:  ## Streaming Kafka -> Bronze (Delta)
 
 stream-silver:  ## Streaming Bronze -> Silver (Delta)
 	python -m dev_trends.pipeline.streaming --stage silver
+
+stream-silver-s3: guard-DEV_TRENDS_S3_BUCKET  ## Streaming Bronze -> Silver en S3 (Delta)
+	AWS_PROFILE=dev-trends-pipeline python -m dev_trends.pipeline.streaming --stage silver \
+	  --silver-path s3a://$(DEV_TRENDS_S3_BUCKET)/silver \
+	  --silver-checkpoint data/checkpoints/silver_s3
 
 dbt-build: guard-DEV_TRENDS_S3_BUCKET  ## Construye el Gold en S3 (seeds + modelos + tests)
 	cd dbt && $(DBT_S3) build --profiles-dir .
