@@ -43,8 +43,12 @@ def run_bronze_to_silver(
 
     Lee Bronze como fuente Delta, parsea el value crudo y reutiliza
     normalize_events (intacto). No necesita el conector de Kafka.
+    Activa s3a solo si Silver apunta a S3.
     """
-    spark = build_spark("dev-trends-stream-silver")
+    spark = build_spark(
+        "dev-trends-stream-silver",
+        enable_s3a=silver_path.startswith("s3a://"),
+    )
 
     bronze = read_bronze_stream(spark, bronze_path)
     parsed = parse_bronze_value(bronze)

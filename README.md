@@ -82,8 +82,10 @@ pipeline funcional de extremo a extremo lo antes posible.
       `fact_github_activity`) sobre Silver, con tests de dbt.
 - [x] **Fase 4 — Terraform:** infraestructura AWS como código (S3 del medallion,
       Glue Data Catalog, workgroup de Athena con tope de escaneo, IAM de mínimo
-      privilegio y alerta de presupuesto). Conectar el pipeline a S3/Athena queda
-      como siguiente paso.
+      privilegio y alerta de presupuesto).
+- [x] **Cutover a AWS:** el pipeline escribe Silver y Gold en S3 (Delta) vía `s3a`;
+      el Gold se registra en el Glue Data Catalog y se consulta desde Athena, que
+      lee Delta de forma nativa (sin generar manifiestos).
 - [ ] **Dashboard:** visualización en Streamlit.
 
 ### Ampliaciones futuras
@@ -124,13 +126,17 @@ make produce DATE=2024-01-15 HOURS=0-0
 
 # Streaming Kafka → Bronze → Silver (Delta)
 make stream-bronze
-make stream-silver
+make stream-silver                   # Silver en local (data/silver)
 
 make down                            # detiene Kafka
 ```
 
 > Se desarrolla con **1 hora** de datos; el mismo flujo escala a 1 día o más
 > cambiando solo `DATE`/`HOURS`, sin tocar la lógica de transformación.
+
+> **Entorno híbrido (Silver en S3):** `make stream-silver-s3` escribe el Silver en
+> `s3a://<bucket>/silver` con el perfil de mínimo privilegio (requiere
+> `DEV_TRENDS_S3_BUCKET`); Bronze y los checkpoints permanecen en local.
 
 El pipeline **batch** original (Fase 1) sigue disponible como alternativa:
 
@@ -140,20 +146,34 @@ make pipeline DATE=2024-01-15 HOURS=0-0
 
 > El pipeline batch produce **Silver**; la agregación a Gold la construye dbt.
 
-### Modelado analítico con dbt (Fase 3)
+### Modelado analítico con dbt
 
-dbt construye la capa **Gold** como *star schema* sobre el Silver ya escrito, en
-local con el adapter `dbt-spark` (método `session`). El resultado aterriza en
-`data/gold/` como tablas Delta (las dimensiones y el hecho `fact_github_activity`),
-que responden la pregunta de V1: *evolución mensual de actividad de desarrollo*.
+dbt construye la capa **Gold** como *star schema* sobre el Silver ya escrito, con el
+adapter `dbt-spark` (método `session`). Las dimensiones y el hecho
+`fact_github_activity` se materializan como tablas Delta en **S3**, y responden la
+pregunta de V1: *evolución mensual de actividad de desarrollo*.
 
 ```bash
-make dbt-build    # seeds + modelos + tests de dbt, todo en un proceso
+export DEV_TRENDS_S3_BUCKET=<bucket-medallion>   # p. ej. dev-trends-medallion-<account_id>
+make dbt-build    # seeds + modelos + tests, escribiendo el Gold en s3a://<bucket>/gold
 make dbt-parse    # valida el proyecto sin conexión (igual que la CI)
 ```
 
-> Las rutas se derivan de `DEV_TRENDS_DATA_ROOT` (el `Makefile` la calcula desde la
-> raíz del repo)
+> `make dbt-build` usa el perfil AWS `dev-trends-pipeline` (mínimo privilegio). El
+> nombre del bucket se pasa por `DEV_TRENDS_S3_BUCKET` (no se versiona: lleva el
+> identificador de cuenta). Los reruns son idempotentes.
+
+### Consulta con Athena
+
+El Gold en S3 se registra en el Glue Data Catalog para consultarlo desde Athena, que
+lee Delta de forma nativa (sin generar manifiestos):
+
+```bash
+make athena-register    # registra las tablas Gold en Glue (idempotente)
+```
+
+A partir de ahí Athena responde la pregunta mensual con un rollup del hecho por
+`dim_date`, dentro del tope de datos escaneados del workgroup.
 
 ### Infraestructura AWS con Terraform (Fase 4)
 

@@ -6,11 +6,13 @@ TOPIC := github.push.raw
 
 DATA_ROOT := $(CURDIR)/data
 
-DBT := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
+S3_ROOT   := s3a://$(DEV_TRENDS_S3_BUCKET)
+DBT_S3    := DEV_TRENDS_DATA_ROOT=$(S3_ROOT) AWS_PROFILE=dev-trends-pipeline dbt
+DBT_PARSE := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
 TF := terraform -chdir=infra
 
-.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze dbt-build dbt-test dbt-parse
+.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -62,14 +64,22 @@ stream-bronze:  ## Streaming Kafka -> Bronze (Delta)
 stream-silver:  ## Streaming Bronze -> Silver (Delta)
 	python -m dev_trends.pipeline.streaming --stage silver
 
-dbt-build:  ## Construye el proyecto dbt (seeds + modelos + tests) en un solo proceso
-	cd dbt && $(DBT) build --profiles-dir .
+stream-silver-s3: guard-DEV_TRENDS_S3_BUCKET  ## Streaming Bronze -> Silver en S3 (Delta)
+	AWS_PROFILE=dev-trends-pipeline python -m dev_trends.pipeline.streaming --stage silver \
+	  --silver-path s3a://$(DEV_TRENDS_S3_BUCKET)/silver \
+	  --silver-checkpoint data/checkpoints/silver_s3
 
-dbt-test:  ## Corre solo los tests de dbt
-	cd dbt && $(DBT) test --profiles-dir .
+dbt-build: guard-DEV_TRENDS_S3_BUCKET  ## Construye el Gold en S3 (seeds + modelos + tests)
+	cd dbt && $(DBT_S3) build --profiles-dir .
+
+dbt-test: guard-DEV_TRENDS_S3_BUCKET  ## Corre los tests dbt sobre el Gold en S3
+	cd dbt && $(DBT_S3) test --profiles-dir .
 
 dbt-parse:  ## Valida el proyecto dbt sin conexión (refs, Jinja, YAML)
-	cd dbt && $(DBT) parse --profiles-dir .
+	cd dbt && $(DBT_PARSE) parse --profiles-dir .
+
+guard-%:
+	@if [ -z "$($*)" ]; then echo "ERROR: define $* (p.ej. export DEV_TRENDS_S3_BUCKET=dev-trends-medallion-<account_id>)"; exit 1; fi
 
 tf-validate:  ## Valida la infra Terraform sin credenciales (lo que corre la CI)
 	$(TF) fmt -check
@@ -81,3 +91,6 @@ tf-plan:  ## Calcula el plan de Terraform (requiere credenciales AWS)
 
 tf-apply:  ## Aplica la infra Terraform (requiere credenciales AWS)
 	$(TF) apply
+
+athena-register: guard-DEV_TRENDS_S3_BUCKET  ## Registra el Gold (Delta) en Glue para Athena
+	AWS_PROFILE=dev-trends-pipeline scripts/athena_register_gold.sh
