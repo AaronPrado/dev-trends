@@ -86,3 +86,6 @@ tf-plan:  ## Calcula el plan de Terraform (requiere credenciales AWS)
 
 tf-apply:  ## Aplica la infra Terraform (requiere credenciales AWS)
 	$(TF) apply
+
+athena-register: guard-DEV_TRENDS_S3_BUCKET  ## Registra el Gold (Delta) en Glue para Athena
+	AWS_PROFILE=dev-trends-pipeline scripts/athena_register_gold.sh
