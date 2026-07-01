@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Registra las tablas Delta del Gold en el catálogo Glue para consultarlas por Athena.
 # Athena engine v3 lee Delta nativo: basta LOCATION + table_type=DELTA.
-# Re-ejecutable.
+# Re-ejecutable: si una tabla ya está registrada, la deja tal cual (Athena no admite
+# DROP TABLE sobre tablas Delta nativas, así que no se puede recrear con DROP+CREATE).
 set -euo pipefail
 export AWS_PAGER=""
 
@@ -33,7 +34,6 @@ run() {
 
 for t in $TABLES; do
   echo "registrando $DB.$t ..."
-  run "DROP TABLE IF EXISTS $DB.$t"
-  run "CREATE EXTERNAL TABLE $DB.$t LOCATION 's3://$BUCKET/gold/$t/' TBLPROPERTIES ('table_type'='DELTA')"
+  run "CREATE EXTERNAL TABLE IF NOT EXISTS $DB.$t LOCATION 's3://$BUCKET/gold/$t/' TBLPROPERTIES ('table_type'='DELTA')"
 done
 echo "OK: tablas registradas en Glue ($DB)."

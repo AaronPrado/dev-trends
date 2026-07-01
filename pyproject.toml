@@ -27,6 +27,11 @@ dev = [
   "pre-commit>=3.7",
   "dbt-spark[session]>=1.8,<2.0",
   "dbt-core>=1.11,<1.12a0",
+  "pandas>=2.0,<3.0",
+]
+dashboard = [
+  "streamlit>=1.38,<2.0",
+  "pyathena>=3.0,<4.0",
 ]
 
 [tool.setuptools.packages.find]
