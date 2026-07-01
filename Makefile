@@ -6,7 +6,9 @@ TOPIC := github.push.raw
 
 DATA_ROOT := $(CURDIR)/data
 
-DBT := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
+S3_ROOT   := s3a://$(DEV_TRENDS_S3_BUCKET)
+DBT_S3    := DEV_TRENDS_DATA_ROOT=$(S3_ROOT) AWS_PROFILE=dev-trends-pipeline dbt
+DBT_PARSE := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
 TF := terraform -chdir=infra
 
@@ -62,14 +64,17 @@ stream-bronze:  ## Streaming Kafka -> Bronze (Delta)
 stream-silver:  ## Streaming Bronze -> Silver (Delta)
 	python -m dev_trends.pipeline.streaming --stage silver
 
-dbt-build:  ## Construye el proyecto dbt (seeds + modelos + tests) en un solo proceso
-	cd dbt && $(DBT) build --profiles-dir .
+dbt-build: guard-DEV_TRENDS_S3_BUCKET  ## Construye el Gold en S3 (seeds + modelos + tests)
+	cd dbt && $(DBT_S3) build --profiles-dir .
 
-dbt-test:  ## Corre solo los tests de dbt
-	cd dbt && $(DBT) test --profiles-dir .
+dbt-test: guard-DEV_TRENDS_S3_BUCKET  ## Corre los tests dbt sobre el Gold en S3
+	cd dbt && $(DBT_S3) test --profiles-dir .
 
 dbt-parse:  ## Valida el proyecto dbt sin conexión (refs, Jinja, YAML)
-	cd dbt && $(DBT) parse --profiles-dir .
+	cd dbt && $(DBT_PARSE) parse --profiles-dir .
+
+guard-%:
+	@if [ -z "$($*)" ]; then echo "ERROR: define $* (p.ej. export DEV_TRENDS_S3_BUCKET=dev-trends-medallion-<account_id>)"; exit 1; fi
 
 tf-validate:  ## Valida la infra Terraform sin credenciales (lo que corre la CI)
 	$(TF) fmt -check
