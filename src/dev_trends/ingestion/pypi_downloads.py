@@ -57,15 +57,19 @@ def _query_config(
 ) -> QueryJobConfig:
     from google.cloud import bigquery
 
-    return bigquery.QueryJobConfig(
+    config = bigquery.QueryJobConfig(
         dry_run=dry_run,
-        maximum_bytes_billed=max_bytes,
         query_parameters=[
             bigquery.ScalarQueryParameter("start_date", "DATE", start),
             bigquery.ScalarQueryParameter("end_date", "DATE", end),
             bigquery.ArrayQueryParameter("packages", "STRING", packages),
         ],
     )
+    # maximum_bytes_billed se serializa con str(value): pasar None lo convierte en
+    # la cadena "None" y la API lo rechaza. Solo se fija cuando hay un tope real
+    if max_bytes is not None:
+        config.maximum_bytes_billed = max_bytes
+    return config
 
 
 def estimate_bytes(client: Client, start: date, end: date, packages: list[str]) -> int:

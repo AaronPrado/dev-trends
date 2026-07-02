@@ -43,7 +43,10 @@ def test_estimate_bytes_is_dry_run_and_returns_estimate(mocker) -> None:
     result = pypi_downloads.estimate_bytes(client, date(2026, 4, 1), date(2026, 7, 1), ["pyspark"])
 
     assert result == 123456
-    assert client.query.call_args.kwargs["job_config"].dry_run is True
+    config = client.query.call_args.kwargs["job_config"]
+    assert config.dry_run is True
+    # dry-run sin tope: maximum_bytes_billed debe quedar SIN fijar (no la cadena "None")
+    assert config.maximum_bytes_billed is None
 
 
 def test_run_download_query_enforces_max_bytes_and_maps_rows(mocker) -> None:
