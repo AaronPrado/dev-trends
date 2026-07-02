@@ -33,6 +33,9 @@ dashboard = [
   "streamlit>=1.38,<2.0",
   "pyathena>=3.0,<4.0",
 ]
+pypi = [
+  "google-cloud-bigquery>=3.0,<4.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

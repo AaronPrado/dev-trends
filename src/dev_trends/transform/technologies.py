@@ -8,6 +8,14 @@ TECHNOLOGY_REPOS: dict[str, list[str]] = {
     "prefect": ["PrefectHQ/prefect"],
 }
 
+TECHNOLOGY_PYPI_PACKAGES: dict[str, list[str]] = {
+    "airflow": ["apache-airflow"],
+    "spark": ["pyspark"],
+    "dbt": ["dbt-core"],
+    "dagster": ["dagster"],
+    "prefect": ["prefect"],
+}
+
 
 def build_technology_mapping(spark: SparkSession) -> DataFrame:
     """TECHNOLOGY_REPOS como DataFrame con columnas.
