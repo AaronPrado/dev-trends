@@ -25,3 +25,13 @@ def build_technology_mapping(spark: SparkSession) -> DataFrame:
     """
     rows = [(repo, tech) for tech, repos in TECHNOLOGY_REPOS.items() for repo in repos]
     return spark.createDataFrame(rows, schema=["repository", "technology"])
+
+
+def build_pypi_package_mapping(spark: SparkSession) -> DataFrame:
+    """TECHNOLOGY_PYPI_PACKAGES como DataFrame [pypi_package, technology].
+
+    Se usa en un inner join contra el agregado de descargas para filtrar y
+    etiquetar la tecnología en una sola operación (análogo a build_technology_mapping).
+    """
+    rows = [(pkg, tech) for tech, pkgs in TECHNOLOGY_PYPI_PACKAGES.items() for pkg in pkgs]
+    return spark.createDataFrame(rows, schema=["pypi_package", "technology"])
