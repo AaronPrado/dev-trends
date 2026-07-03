@@ -37,3 +37,5 @@ for t in $TABLES; do
   run "CREATE EXTERNAL TABLE IF NOT EXISTS $DB.$t LOCATION 's3://$BUCKET/gold/$t/' TBLPROPERTIES ('table_type'='DELTA')"
 done
 echo "OK: tablas registradas en Glue ($DB)."
+
+TABLES="dim_technology dim_event_type dim_source dim_date fact_github_activity fact_pypi_downloads"

@@ -10,6 +10,7 @@ clean-targets: ["target", "dbt_packages"]
 vars:
   # Silver lo escribe Spark, no dbt; dbt lo consume como entrada externa por ruta.
   silver_path: "{{ env_var('DEV_TRENDS_DATA_ROOT') }}/silver"
+  pypi_silver_path: "{{ env_var('DEV_TRENDS_DATA_ROOT') }}/silver/pypi_downloads"
 
 models:
   dev_trends:
