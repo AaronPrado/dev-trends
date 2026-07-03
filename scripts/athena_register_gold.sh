@@ -11,7 +11,7 @@ REGION="${AWS_REGION:-eu-west-1}"
 WG="${DEV_TRENDS_ATHENA_WORKGROUP:-dev-trends-v1}"
 DB="${DEV_TRENDS_GLUE_DB:-dev_trends}"
 BUCKET="$DEV_TRENDS_S3_BUCKET"
-TABLES="dim_technology dim_event_type dim_source dim_date fact_github_activity"
+TABLES="dim_technology dim_event_type dim_source dim_date fact_github_activity fact_pypi_downloads"
 
 run() {  
   local qid st
@@ -37,3 +37,4 @@ for t in $TABLES; do
   run "CREATE EXTERNAL TABLE IF NOT EXISTS $DB.$t LOCATION 's3://$BUCKET/gold/$t/' TBLPROPERTIES ('table_type'='DELTA')"
 done
 echo "OK: tablas registradas en Glue ($DB)."
+

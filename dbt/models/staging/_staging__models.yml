@@ -10,3 +10,13 @@ models:
         tests: [not_null]
       - name: event_type
         tests: [not_null]
+
+  - name: stg_pypi_downloads
+    description: "Descargas diarias de PyPI por paquete (agregadas en BigQuery), etiquetadas con tecnología."
+    columns:
+      - name: technology
+        tests: [not_null]
+      - name: download_date
+        tests: [not_null]
+      - name: download_count
+        tests: [not_null]

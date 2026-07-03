@@ -39,3 +39,32 @@ models:
                 field: source
       - name: event_count
         tests: [not_null]
+
+  - name: fact_pypi_downloads
+    description: "Descargas de PyPI por fecha, tecnología y fuente (grano diario). Mide adopción, no actividad."
+    columns:
+      - name: download_key
+        tests: [not_null, unique]
+      - name: download_date
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: technology
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_technology')
+                field: technology
+      - name: source
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_source')
+                field: source
+      - name: download_count
+        tests: [not_null]

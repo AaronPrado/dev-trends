@@ -1,6 +1,11 @@
 from pyspark.sql import SparkSession
 
-from dev_trends.transform.technologies import TECHNOLOGY_REPOS, build_technology_mapping
+from dev_trends.transform.technologies import (
+    TECHNOLOGY_PYPI_PACKAGES,
+    TECHNOLOGY_REPOS,
+    build_pypi_package_mapping,
+    build_technology_mapping,
+)
 
 V1_TECHNOLOGIES = {"airflow", "spark", "dbt", "dagster", "prefect"}
 
@@ -31,5 +36,30 @@ def test_build_technology_mapping_row_count(spark: SparkSession) -> None:
 
 def test_build_technology_mapping_all_techs_present(spark: SparkSession) -> None:
     df = build_technology_mapping(spark)
+    techs = {row.technology for row in df.select("technology").collect()}
+    assert techs == V1_TECHNOLOGIES
+
+
+def test_pypi_packages_cover_v1_technologies() -> None:
+    assert set(TECHNOLOGY_PYPI_PACKAGES.keys()) == V1_TECHNOLOGIES
+
+
+def test_pypi_packages_no_empty_lists() -> None:
+    for tech, packages in TECHNOLOGY_PYPI_PACKAGES.items():
+        assert packages, f"{tech} no tiene paquetes PyPI definidos"
+
+
+def test_build_pypi_package_mapping_schema(spark: SparkSession) -> None:
+    df = build_pypi_package_mapping(spark)
+    assert df.columns == ["pypi_package", "technology"]
+
+
+def test_build_pypi_package_mapping_row_count(spark: SparkSession) -> None:
+    expected = sum(len(pkgs) for pkgs in TECHNOLOGY_PYPI_PACKAGES.values())
+    assert build_pypi_package_mapping(spark).count() == expected
+
+
+def test_build_pypi_package_mapping_all_techs_present(spark: SparkSession) -> None:
+    df = build_pypi_package_mapping(spark)
     techs = {row.technology for row in df.select("technology").collect()}
     assert techs == V1_TECHNOLOGIES

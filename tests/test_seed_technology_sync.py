@@ -8,7 +8,7 @@ El catálogo de tecnologías vive en dos sitios por necesidad: el código
 import csv
 from pathlib import Path
 
-from dev_trends.transform.technologies import TECHNOLOGY_REPOS
+from dev_trends.transform.technologies import TECHNOLOGY_PYPI_PACKAGES, TECHNOLOGY_REPOS
 
 _SEED = Path(__file__).resolve().parents[1] / "dbt" / "seeds" / "dim_technology.csv"
 
@@ -28,3 +28,9 @@ def test_seed_github_repo_matches_source() -> None:
     """Cada github_repo del seed pertenece a su tecnología en TECHNOLOGY_REPOS."""
     for row in _read_seed():
         assert row["github_repo"] in TECHNOLOGY_REPOS[row["technology"]]
+
+
+def test_seed_pypi_package_matches_source() -> None:
+    """Cada pypi_package del seed pertenece a su tecnología en TECHNOLOGY_PYPI_PACKAGES."""
+    for row in _read_seed():
+        assert row["pypi_package"] in TECHNOLOGY_PYPI_PACKAGES[row["technology"]]
