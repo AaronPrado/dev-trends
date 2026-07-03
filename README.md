@@ -1,34 +1,41 @@
 # dev-trends
 
-> Plataforma de datos que mide la **actividad de desarrollo** de tecnologías de
-> software a partir de fuentes públicas (GitHub, vía GH Archive). Pipeline de
-> Data Engineering de extremo a extremo: ingesta en streaming, procesamiento
-> distribuido, arquitectura medallion sobre un data lake en AWS y modelado
-> analítico.
+> Plataforma de datos que mide la **actividad de desarrollo** y la **adopción** de
+> tecnologías de software a partir de fuentes públicas (eventos de GitHub vía GH
+> Archive, y descargas de PyPI vía BigQuery). Pipeline de Data Engineering de
+> extremo a extremo: ingesta en streaming y batch, procesamiento distribuido,
+> arquitectura medallion sobre un data lake en AWS y modelado analítico.
 
-> **Estado: V1 completa.** Pipeline de punta a punta con datos reales: GH Archive →
-> Kafka → Spark Structured Streaming → Silver/Gold en S3 (Delta) → dbt → Athena →
-> Streamlit. Las ampliaciones (más fuentes, más tecnologías, calidad de datos,
-> observabilidad) quedan para siguientes fases.
+> **Estado: V1 completa (etiquetada en `v1.0.0`); ampliándose.** El pipeline base
+> funciona de punta a punta con datos reales: GH Archive → Kafka → Spark Structured
+> Streaming → Silver/Gold en S3 (Delta) → dbt → Athena → Streamlit. Ya integrada una
+> **segunda fuente (PyPI)** para medir adopción; el resto de ampliaciones (dashboard
+> en Power BI, calidad de datos, observabilidad) están en el roadmap más abajo.
 
 ---
 
 ## Qué es
 
-`dev-trends` ingiere el flujo de eventos públicos de GitHub (pushes, pull
-requests, releases, etc.) y lo transforma en métricas de actividad por
-tecnología, para responder preguntas como *qué herramientas de su categoría
-crecen en actividad de desarrollo y cuáles se estancan*.
+`dev-trends` combina dos señales públicas por tecnología:
+
+- **Actividad de desarrollo** — eventos de GitHub (pushes, pull requests, releases…)
+  vía GH Archive: cuánto se *construye* una herramienta.
+- **Adopción** — descargas de paquetes de PyPI vía BigQuery: cuánto se *usa*.
+
+Cruzando ambas responde preguntas que ninguna fuente contesta sola: qué
+herramientas se construyen mucho pero se usan poco (emergentes), cuáles se usan
+mucho con menos desarrollo (maduras), y hacia dónde va cada una en el tiempo.
 
 El proyecto está diseñado como demostración de un pipeline de Data Engineering
 moderno de principio a fin, con las prácticas que se esperan en producción:
 arquitectura por capas, transición de batch a streaming, infraestructura como
 código y modelado analítico desacoplado.
 
-> **Nota sobre qué se mide.** GitHub refleja *actividad de desarrollo* (commits,
-> PRs, releases), no *adopción* en producción. `dev-trends` mide lo primero. La
-> medición de adopción (vía descargas de paquetes) está contemplada como
-> ampliación futura.
+> **Nota sobre las métricas.** GitHub mide *actividad de desarrollo*
+> (commits, PRs, releases), no adopción en producción. Las descargas de PyPI son un
+> proxy de *uso* inflado por CI/CD, mirrors y bots: se leen como **tendencia
+> relativa por paquete**, no como recuento de usuarios. Por eso se reportan **por
+> fuente** y se comparan por *ranking*, no por magnitud absoluta.
 
 ---
 
@@ -36,14 +43,14 @@ código y modelado analítico desacoplado.
 
 | Capa | Tecnología |
 |---|---|
-| Fuente | GH Archive (eventos públicos de GitHub) |
-| Ingesta | Apache Kafka (batch → streaming) |
+| Fuentes | GH Archive (eventos de GitHub) · BigQuery (descargas de PyPI) |
+| Ingesta | Apache Kafka (streaming) · cliente de BigQuery (agregación en origen) |
 | Procesamiento | Apache Spark (Structured Streaming) |
 | Almacenamiento | AWS S3 + Delta Lake (arquitectura medallion) |
 | Catálogo | AWS Glue Data Catalog |
 | Modelado | dbt |
 | Consulta | AWS Athena |
-| Visualización | Streamlit |
+| Visualización | Streamlit (Power BI, en el roadmap) |
 | Infraestructura | Terraform |
 | Orquestación local | Docker Compose |
 
@@ -55,16 +62,19 @@ el almacenamiento y la consulta (S3, Glue, Athena) viven en AWS.
 ## Arquitectura
 
 ```
-GH Archive ──▶ Kafka ──▶ Spark ──▶ S3 / Delta (medallion) ──▶ Athena ──▶ Dashboard
-                                   Bronze → Silver → Gold
-                                                 (dbt)
+GH Archive ──────▶ Kafka ──▶ Spark ─┐
+                                     ├─▶ S3 / Delta (medallion) ──▶ Athena ──▶ Dashboard
+BigQuery (PyPI) ──────────▶ Spark ──┘   Bronze → Silver → Gold
+                                                      (dbt)
 
            Terraform aprovisiona la infraestructura AWS (S3, Glue, Athena, IAM)
 ```
 
-- **Bronze:** eventos crudos de GH Archive, tal cual.
-- **Silver:** eventos normalizados y filtrados (un evento por fila, tipado).
-- **Gold:** agregados analíticos por tecnología y periodo, modelados con dbt.
+- **Bronze:** eventos crudos de GH Archive, tal cual (solo la fuente de GitHub).
+- **Silver:** datos normalizados y particionados por fecha — un evento de GitHub por
+  fila, y las descargas de PyPI agregadas por día y paquete.
+- **Gold:** hechos analíticos a grano diario modelados con dbt — `fact_github_activity`
+  (actividad) y `fact_pypi_downloads` (adopción), sobre dimensiones conformadas.
 
 ### Esquema Silver
 
@@ -84,12 +94,27 @@ la Fase 1 para que dbt pudiera construirse encima sin romper capas anteriores:
 No incluye el actor del evento (PII, y no aporta a la pregunta de actividad por
 tecnología).
 
+### Esquema Silver de descargas PyPI
+
+Descargas agregadas por día y paquete (la agregación fina se hace en BigQuery; la
+suma por tecnología la construye dbt en Gold), particionado por fecha:
+
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `download_date` | date | Día de las descargas. |
+| `technology` | string | Tecnología asociada al paquete. |
+| `pypi_package` | string | Paquete de PyPI (`dbt-core`, `pyspark`, `apache-airflow`…). |
+| `download_count` | long | Descargas del paquete ese día. |
+| `year` / `month` / `day` | int | Partición derivada de `download_date`. |
+
 ---
 
 ## Estado del proyecto
 
 Construcción por fases. El orden prioriza las tecnologías núcleo y deja un
 pipeline funcional de extremo a extremo lo antes posible.
+
+**V1 — recorrido vertical completo (etiquetada en `v1.0.0`):**
 
 - [x] **Fase 1 — Spark (batch):** ingesta de ficheros de GH Archive, parseo y
       normalización a Silver. (La agregación a Gold inicial era provisional; la
@@ -110,11 +135,20 @@ pipeline funcional de extremo a extremo lo antes posible.
       por tecnología y el total por tecnología para el rango seleccionado, leyendo de
       Athena.
 
-### Ampliaciones futuras
+### V_final — Amplificación
 
-Descargas de PyPI como segunda fuente (para medir adopción, no solo actividad),
-más categorías de tecnologías, validación de calidad de datos, observabilidad y
-un dashboard analítico en Power BI.
+Misma arquitectura, creciendo en amplitud (más fuentes y piezas de soporte):
+
+- [x] **PyPI como 2ª fuente (adopción):** ingesta de descargas de PyPI desde BigQuery
+      (agregadas en origen, con guardas de coste), normalizadas a Silver y modeladas
+      con dbt como `fact_pypi_downloads`. `dim_source` pasa a ser real y `dim_date`
+      cubre la unión de rangos de ambas fuentes; GitHub se backfillea a la misma
+      ventana para comparar actividad vs adopción sobre el mismo periodo.
+- [ ] **Dashboard analítico en Power BI** (lee de Athena) — siguiente.
+- [ ] Validación de calidad de datos (Great Expectations).
+- [ ] Métricas compuestas (momentum / salud de comunidad), donde las señales sean homogéneas.
+- [ ] Observabilidad (Prometheus / Grafana).
+- [ ] Más categorías de tecnologías.
 
 ---
 
@@ -129,6 +163,9 @@ un dashboard analítico en Power BI.
 - Terraform 1.6+ (para aprovisionar la infraestructura AWS)
 - Una cuenta de AWS (las capas de almacenamiento usan el free tier)
 - Credenciales de AWS configuradas (variables de entorno o `~/.aws/credentials`)
+- Para la ingesta de PyPI: un proyecto de GCP (BigQuery Sandbox, sin tarjeta) con
+  credenciales ADC (`gcloud auth application-default login`) y el extra `pypi`
+  instalado (`pip install -e ".[pypi]"`)
 
 > Las credenciales de AWS **nunca** se versionan. Consulta `.gitignore` y usa un
 > fichero `.env` local (excluido del control de versiones).
@@ -168,12 +205,39 @@ make pipeline DATE=2024-01-15 HOURS=0-0
 
 > El pipeline batch produce **Silver**; la agregación a Gold la construye dbt.
 
+### Segunda fuente: descargas de PyPI (BigQuery)
+
+La ingesta de PyPI consulta el dataset público de BigQuery, **agrega en origen**
+(día × paquete) y trae solo el agregado a Silver, con guardas de coste: un dry-run
+mide los bytes antes de gastar y `maximum_bytes_billed` es un tope duro.
+
+```bash
+# Estimación de escaneo, sin ejecutar ni escribir (mide bytes en BigQuery):
+python -m dev_trends.pipeline.pypi_downloads --start 2026-04-01 --end 2026-07-01 \
+  --dry-run --project <tu-proyecto-gcp>
+
+# Backfill real a Silver en S3 (requiere DEV_TRENDS_S3_BUCKET y DEV_TRENDS_GCP_PROJECT):
+make pypi-ingest START=2026-04-01 END=2026-07-01
+```
+
+> Las credenciales de GCP (ADC) viven en `~/.config/gcloud` y **nunca** se versionan.
+
+### Backfill de GitHub a una ventana amplia
+
+Para comparar actividad y adopción sobre el mismo periodo, GitHub se carga a la
+misma ventana con el pipeline batch, escribiendo cada día de forma idempotente
+(`replaceWhere` por partición: re-lanzar el rango no duplica eventos):
+
+```bash
+make backfill-github START=2026-04-01 END=2026-07-01
+```
+
 ### Modelado analítico con dbt
 
 dbt construye la capa **Gold** como *star schema* sobre el Silver ya escrito, con el
-adapter `dbt-spark` (método `session`). Las dimensiones y el hecho
-`fact_github_activity` se materializan como tablas Delta en **S3**, y responden la
-pregunta de V1: *evolución diaria de actividad de desarrollo*.
+adapter `dbt-spark` (método `session`). Las dimensiones conformadas y los hechos
+`fact_github_activity` (actividad) y `fact_pypi_downloads` (adopción) se materializan
+como tablas Delta en **S3**, a grano diario y sobre las mismas dimensiones.
 
 ```bash
 export DEV_TRENDS_S3_BUCKET=<bucket-medallion>   # p. ej. dev-trends-medallion-<account_id>
