@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from pyspark.sql import SparkSession
@@ -47,22 +47,64 @@ def run_batch(
     logger.info("Silver escrito para %s", event_date)
 
 
+def date_range(start: date, end: date) -> list[date]:
+    """Días en [start, end) — end exclusivo."""
+    return [start + timedelta(days=n) for n in range((end - start).days)]
+
+
+def run_backfill(
+    start: date,
+    end: date,
+    bronze_dir: Path,
+    silver_path: str,
+    hours: range = range(24),
+) -> None:
+    """Backfill de [start, end): día a día, download → Silver.
+
+    Cada día se escribe con replaceWhere sobre su partición:
+    idempotente y reiniciable, y reemplaza limpio cualquier día ya presente
+    sin duplicar event_id. El crudo de cada día se borra tras procesarlo.
+    """
+    spark = build_spark("dev-trends-backfill", enable_s3a=silver_path.startswith("s3a://"))
+    mapping = build_technology_mapping(spark)
+    for day in date_range(start, end):
+        paths = download_range(day, bronze_dir, hours)
+        if not paths:
+            logger.warning("Sin ficheros para %s — se omite.", day)
+            continue
+        silver_df = normalize_events(read_bronze(spark, paths), mapping)
+        where = f"year = {day.year} AND month = {day.month} AND day = {day.day}"
+        write_silver(silver_df, silver_path, mode="overwrite", replace_where=where)
+        for p in paths:
+            p.unlink(missing_ok=True)
+        logger.info("Silver GitHub escrito para %s (%d ficheros)", day, len(paths))
+
+
 if __name__ == "__main__":
     import argparse
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser(description="Pipeline batch GH Archive → Silver")
-    parser.add_argument("--date", required=True, help="Fecha a procesar (YYYY-MM-DD)")
+    parser.add_argument("--date", help="Fecha a procesar (YYYY-MM-DD)")
     parser.add_argument("--bronze-dir", default="data/bronze")
     parser.add_argument("--silver-path", default="data/silver")
     parser.add_argument("--hours", default="0-23", help="Rango de horas, e.g. '0-0' para 1 hora")
+    parser.add_argument("--start", help="Backfill: primer día inclusive (YYYY-MM-DD)")
+    parser.add_argument("--end", help="Backfill: día de corte exclusivo (YYYY-MM-DD)")
     args = parser.parse_args()
 
-    start, end = (int(h) for h in args.hours.split("-"))
-    run_batch(
-        event_date=date.fromisoformat(args.date),
-        bronze_dir=Path(args.bronze_dir),
-        silver_path=args.silver_path,
-        hours=range(start, end + 1),
-    )
+    start_h, end_h = (int(h) for h in args.hours.split("-"))
+    hours = range(start_h, end_h + 1)
+    if args.start and args.end:
+        run_backfill(
+            date.fromisoformat(args.start),
+            date.fromisoformat(args.end),
+            Path(args.bronze_dir),
+            args.silver_path,
+            hours,
+        )
+    elif args.date:
+        run_batch(date.fromisoformat(args.date), Path(args.bronze_dir), args.silver_path, hours)
+    else:
+        parser.error("indica --date (un día) o --start/--end (backfill)")
