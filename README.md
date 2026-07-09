@@ -9,8 +9,9 @@
 > **Estado: V1 completa (etiquetada en `v1.0.0`); ampliándose.** El pipeline base
 > funciona de punta a punta con datos reales: GH Archive → Kafka → Spark Structured
 > Streaming → Silver/Gold en S3 (Delta) → dbt → Athena → Streamlit. Ya integrada una
-> **segunda fuente (PyPI)** para medir adopción; el resto de ampliaciones (dashboard
-> en Power BI, calidad de datos, observabilidad) están en el roadmap más abajo.
+> **segunda fuente (PyPI)** para medir adopción, y añadido el **dashboard analítico
+> en Power BI**; el resto de ampliaciones (calidad de datos, observabilidad) están
+> en el roadmap más abajo.
 
 ---
 
@@ -50,7 +51,7 @@ código y modelado analítico desacoplado.
 | Catálogo | AWS Glue Data Catalog |
 | Modelado | dbt |
 | Consulta | AWS Athena |
-| Visualización | Streamlit (Power BI, en el roadmap) |
+| Visualización | Streamlit · Power BI (dashboard analítico) |
 | Infraestructura | Terraform |
 | Orquestación local | Docker Compose |
 
@@ -144,7 +145,8 @@ Misma arquitectura, creciendo en amplitud (más fuentes y piezas de soporte):
       con dbt como `fact_pypi_downloads`. `dim_source` pasa a ser real y `dim_date`
       cubre la unión de rangos de ambas fuentes; GitHub se backfillea a la misma
       ventana para comparar actividad vs adopción sobre el mismo periodo.
-- [ ] **Dashboard analítico en Power BI** (lee de Athena) — siguiente.
+- [x] **Dashboard analítico en Power BI** (lee de Athena): comparación de actividad
+      vs adopción por tecnología y fecha, con detalle por tecnología (*drillthrough*).
 - [ ] Validación de calidad de datos (Great Expectations).
 - [ ] Métricas compuestas (momentum / salud de comunidad), donde las señales sean homogéneas.
 - [ ] Observabilidad (Prometheus / Grafana).
@@ -280,6 +282,33 @@ make dashboard
 > para no volver a escanear datos en cada interacción.
 
 ![Dashboard: evolución diaria de actividad de desarrollo](docs/dashboard-streamlit.png)
+
+### Dashboard analítico en Power BI
+
+El dashboard definitivo de la ampliación (`dashboard/powerbi/`) lee la capa Gold
+desde Athena: los agregados se cargan una vez y toda la
+interacción es local, sin re-escanear Athena. Se conecta con un usuario IAM de
+**solo lectura** dedicado (mínimo privilegio).
+Cruza `fact_github_activity` (actividad) y `fact_pypi_downloads` (adopción) sobre
+las dimensiones conformadas, en tres páginas:
+
+1. **Comparativa** — rankings de actividad (GitHub) vs adopción (PyPI) por
+   tecnología para el periodo seleccionado. Al elegir una tecnología se resalta en
+   ambos rankings y las tarjetas y el logo se adaptan a ella.
+2. **Tendencia en el tiempo** — *small multiples* de las cinco tecnologías, cada
+   serie normalizada a su propio máximo (media móvil de 7 días, % del pico): compara
+   la **dirección** de actividad y adopción en el tiempo, no su magnitud.
+3. **Detalle por tecnología** (*drillthrough*) — al profundizar en una tecnología:
+   su posición en cada ranking, el **desglose por tipo de evento** (push, pull
+   request, release, watch) y su tendencia. El desglose expone la *calidad* de la
+   actividad: pushes ≈ PRs refleja desarrollo humano; pushes ≫ PRs delata
+   automatización, no desarrollo real.
+
+![Comparativa: actividad vs adopción por tecnología](dashboard/powerbi/screenshots/pagina-1-comparativa.png)
+![Tendencia normalizada por tecnología](dashboard/powerbi/screenshots/pagina-2-tendencia.png)
+![Detalle por tecnología con desglose por tipo de evento](dashboard/powerbi/screenshots/pagina-3-detalle.png)
+
+> La conexión se configura con un DSN ODBC de Athena
 
 ### Infraestructura AWS con Terraform (Fase 4)
 
