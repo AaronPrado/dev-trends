@@ -150,9 +150,21 @@ Misma arquitectura, creciendo en amplitud (más fuentes y piezas de soporte):
 - [x] **Validación de calidad de datos:** gate sobre la capa Silver (validez
       estructural + detección de anomalías de negocio) con los tests de dbt y
       `dbt-expectations`.
-- [ ] Métricas compuestas (momentum / salud de comunidad), donde las señales sean homogéneas.
-- [ ] Observabilidad (Prometheus / Grafana).
-- [ ] Más categorías de tecnologías.
+- ~~Métricas compuestas (momentum / salud de comunidad)~~ — **descartadas** tras medir
+      las señales; el razonamiento está en «Métricas compuestas: por qué no existen».
+- [ ] Observabilidad del streaming (Prometheus / Grafana).
+- [ ] Reprocesamiento en Kafka (retención, *offsets*, idempotencia frente al *checkpoint*).
+
+**Mejoras futuras** (evaluadas y pospuestas, no olvidadas):
+
+- **Catálogo completo de tecnologías** (Backend, IA). El pipeline ya es agnóstico al
+  número de repositorios: ampliarlo son filas en un *seed*, sin código ni conceptos
+  nuevos. A cambio obliga a reingerir la ventana completa de GH Archive, porque el
+  filtrado por tecnología precede a la capa Silver.
+- **Más *topics* en Kafka** (`pypi-releases`, `technology-metadata`). Las *releases* de
+  PyPI se obtienen de una API REST paginada, no de un flujo continuo: publicarlas en un
+  *topic* repetiría el patrón del productor existente sin ejercitar nada nuevo.
+- **Más fuentes de adopción**: Docker Hub, npm, Maven Central.
 
 ---
 
@@ -276,9 +288,15 @@ Un ejemplo concreto de anomalía: un test marca los días en que una tecnología
 acumula mucha actividad de `push` con *pull requests* casi ausentes — la firma de la
 **automatización** (bots o CI que empujan *commits* sin revisión), que no es
 desarrollo humano pero infla la actividad. Sobre los datos reales el test señala
-**dbt el 2026-06-01: 931 pushes y 0 PRs**. Es el mismo desbalance `push ≫ PR` que el
-desglose por tipo de evento del dashboard hace visible: sin este aviso, ese pico se
-leería como desarrollo genuino.
+**dbt el 2026-06-01: 931 pushes y 0 PRs**, un día que vale **22 veces la mediana
+diaria de ese mes**. Es el mismo desbalance `push ≫ PR` que el desglose por tipo de
+evento del dashboard hace visible: sin este aviso, ese pico se leería como desarrollo
+genuino.
+
+El test opera a grano **diario** por diseño: sobre el agregado mensual, ese día pasa
+inadvertido. Junio suma 2260 eventos, casi los mismos que abril (2319) — pero 990 de
+ellos son del día 1. Descontándolo, junio va a 44 eventos diarios frente a los 77 de
+abril. Un agregado suficientemente grueso siempre acaba dando el visto bueno.
 
 ```bash
 make dbt-deps    # instala dbt-expectations (packages.yml), una sola vez
@@ -288,6 +306,49 @@ make dbt-test    # solo los tests, sobre el Gold ya construido
 
 > Los tests que dependen de datos corren en local (`dbt build`/`dbt test`); la CI
 > valida el proyecto dbt sin conexión (`dbt parse`), como el resto del modelado.
+
+### Hallazgo: la actividad de estos repositorios se está automatizando
+
+El desglose por tipo de evento a lo largo del trimestre analizado muestra un
+desplazamiento sostenido del trabajo humano al automatizado:
+
+| mes | pull_request | push | release | watch | % humano |
+|---|---|---|---|---|---|
+| abril | 1014 | 1056 | 7 | 242 | 44 % |
+| mayo | 671 | 1430 | 4 | 137 | 30 % |
+| junio | 184 | 2017 | 2 | 57 | 8 % |
+
+`pull_request` cae en las cinco tecnologías (entre −66 % y −100 %) y `watch` un 76 %,
+mientras `push` se dispara. **No es que GitHub estuviera más tranquilo:** los ficheros
+horarios del origen traen 158 392 eventos en abril y 157 497 en junio. Son estos cinco
+repositorios los que se han vuelto *push-only*.
+
+El dato está verificado contra la fuente: se contrastó el crudo de GH Archive con la
+capa Silver para horas concretas, y los conteos coinciden evento a evento. La caída
+está en el origen, no en el pipeline.
+
+Conviene además desglosar por tecnología antes de leer el agregado: el crecimiento de
+`push` es casi todo de un solo repositorio (dbt, ×12 entre abril y junio). Descontándolo,
+junio suma 944 *pushes* contra 968 en abril — plano.
+
+### Métricas compuestas: por qué no existen
+
+Se evaluó un *Momentum Score* que combinara actividad (GitHub) y adopción (PyPI) por
+tecnología. Se descartó tras medir las señales, y el motivo merece contarse.
+
+Las dos fuentes miden magnitudes incomparables: descargas en cientos de millones frente
+a eventos en decenas por día. Lo único que se puede componer entre ellas son **tasas de
+variación** adimensionales, nunca los niveles. Y toda tasa necesita un denominador con
+volumen suficiente — que la señal de desarrollo humano no tiene: los cinco repositorios
+suman **13 releases en todo el trimestre**, y `dagster-io/dagster` registra entre 0 y 8
+*pull requests* al mes. Un cociente sobre contadores de una cifra no mide impulso, mide
+ruido de muestreo. No lo arregla ampliar el histórico: tres meses es la ventana completa.
+
+La divergencia entre *cuánto se construye* una herramienta y *cuánto se usa* —el hallazgo
+que el score pretendía resumir en un número— ya está disponible sin él: los rankings de
+actividad y de adopción se comparan directamente en el dashboard, cada uno en su escala
+y sin promediarlos. Un índice que promedia dos señales incomparables esconde más de lo
+que explica.
 
 ### Consulta con Athena
 
