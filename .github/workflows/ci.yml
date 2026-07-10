@@ -44,6 +44,12 @@ jobs:
       - name: Tests (pytest)
         run: make test
 
+      - name: dbt (deps)
+        run: make dbt-deps
+
+      - name: dbt (parse)
+        run: make dbt-parse
+
       - name: dbt (parse)
         run: make dbt-parse
 
