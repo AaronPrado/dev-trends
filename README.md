@@ -414,8 +414,9 @@ las dimensiones conformadas, en tres páginas:
 La infraestructura de almacenamiento y consulta se declara como código en `infra/`:
 los buckets S3 del medallion y de resultados de Athena, la base de datos del Glue
 Data Catalog, el workgroup de Athena (con tope de datos escaneados como guarda de
-coste), un usuario y una política IAM de mínimo privilegio para el pipeline, y una
-alerta de presupuesto mensual.
+coste), dos usuarios IAM de mínimo privilegio —uno de lectura y escritura para el
+pipeline, y otro de **solo lectura** para el dashboard de Power BI, limitado a
+consultar Athena y leer la capa Gold— y una alerta de presupuesto mensual.
 
 ```bash
 cd infra
