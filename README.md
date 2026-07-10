@@ -147,7 +147,9 @@ Misma arquitectura, creciendo en amplitud (más fuentes y piezas de soporte):
       ventana para comparar actividad vs adopción sobre el mismo periodo.
 - [x] **Dashboard analítico en Power BI** (lee de Athena): comparación de actividad
       vs adopción por tecnología y fecha, con detalle por tecnología (*drillthrough*).
-- [ ] Validación de calidad de datos (Great Expectations).
+- [x] **Validación de calidad de datos:** gate sobre la capa Silver (validez
+      estructural + detección de anomalías de negocio) con los tests de dbt y
+      `dbt-expectations`.
 - [ ] Métricas compuestas (momentum / salud de comunidad), donde las señales sean homogéneas.
 - [ ] Observabilidad (Prometheus / Grafana).
 - [ ] Más categorías de tecnologías.
@@ -250,6 +252,42 @@ make dbt-parse    # valida el proyecto sin conexión (igual que la CI)
 > `make dbt-build` usa el perfil AWS `dev-trends-pipeline` (mínimo privilegio). El
 > nombre del bucket se pasa por `DEV_TRENDS_S3_BUCKET` (no se versiona: lleva el
 > identificador de cuenta). Los reruns son idempotentes.
+
+### Calidad de datos
+
+El pipeline valida la capa **Silver** antes de consolidarla en los hechos
+analíticos de **Gold**, con un gate de calidad de datos de dos familias:
+
+- **Validez estructural** (el contrato de la capa Silver): cada evento tiene
+  `event_id` único y no nulo, `technology`/`event_type`/`created_at` presentes,
+  `event_type` dentro del dominio esperado (`push`, `pull_request`, `release`,
+  `watch`) y `repository` con formato `org/repo`. Si algo falla, el *build* **se
+  detiene**: es corrupción y no debe llegar a los modelos.
+- **Anomalías de negocio**: patrones que sesgan la interpretación aunque el dato
+  sea correcto. Se emiten como **aviso** (no detienen el *build*): el dato es real,
+  solo hay que no leerlo de forma ingenua.
+
+Se implementa con los **tests nativos de dbt** más el paquete **`dbt-expectations`**. 
+El pipeline ya usa dbt para el modelado, los agregados que la detección de anomalías 
+necesita ya existen en la capa Gold, y así la validación vive junto a los datos que valida, 
+sin añadir un motor aparte ni una dependencia pesada.
+
+Un ejemplo concreto de anomalía: un test marca los días en que una tecnología
+acumula mucha actividad de `push` con *pull requests* casi ausentes — la firma de la
+**automatización** (bots o CI que empujan *commits* sin revisión), que no es
+desarrollo humano pero infla la actividad. Sobre los datos reales el test señala
+**dbt el 2026-06-01: 931 pushes y 0 PRs**. Es el mismo desbalance `push ≫ PR` que el
+desglose por tipo de evento del dashboard hace visible: sin este aviso, ese pico se
+leería como desarrollo genuino.
+
+```bash
+make dbt-deps    # instala dbt-expectations (packages.yml), una sola vez
+make dbt-build   # construye el Gold y ejecuta TODOS los tests (estructurales + anomalías)
+make dbt-test    # solo los tests, sobre el Gold ya construido
+```
+
+> Los tests que dependen de datos corren en local (`dbt build`/`dbt test`); la CI
+> valida el proyecto dbt sin conexión (`dbt parse`), como el resto del modelado.
 
 ### Consulta con Athena
 
