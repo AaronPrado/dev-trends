@@ -9,7 +9,19 @@ models:
       - name: technology
         tests: [not_null]
       - name: event_type
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["push", "pull_request", "release", "watch"]
+      - name: created_at
         tests: [not_null]
+      - name: repository
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_match_regex:
+              arguments:
+                regex: "^[^/]+/[^/]+"
 
   - name: stg_pypi_downloads
     description: "Descargas diarias de PyPI por paquete (agregadas en BigQuery), etiquetadas con tecnología."
