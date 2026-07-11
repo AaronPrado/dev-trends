@@ -12,7 +12,7 @@ DBT_PARSE := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
 TF := terraform -chdir=infra
 
-.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register dashboard pypi-ingest backfill-github dbt-deps
+.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register dashboard pypi-ingest backfill-github dbt-deps obs-up obs-down stream-bronze-obs stream-silver-obs
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -112,3 +112,17 @@ backfill-github: guard-DEV_TRENDS_S3_BUCKET  ## Backfill GitHub -> Silver S3. Us
 
 dbt-deps:  ## Instala las dependencias dbt (packages.yml)
 	cd dbt && dbt deps
+
+obs-up:  ## Levanta Kafka + Prometheus + Grafana (perfil obs)
+	$(COMPOSE) --profile obs up -d
+
+obs-down:  ## Detiene el stack de observabilidad (perfil obs)
+	$(COMPOSE) --profile obs down
+
+stream-bronze-obs:  ## Streaming Kafka -> Bronze con métricas Prometheus (trigger continuo, :9101)
+	python -m dev_trends.pipeline.streaming --stage bronze --topic $(TOPIC) \
+	  --trigger processing-time --trigger-interval "5 seconds" --metrics-port 9101
+
+stream-silver-obs:  ## Streaming Bronze -> Silver con métricas Prometheus (trigger continuo, :9102)
+	python -m dev_trends.pipeline.streaming --stage silver \
+	  --trigger processing-time --trigger-interval "5 seconds" --metrics-port 9102

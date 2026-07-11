@@ -36,6 +36,9 @@ dashboard = [
 pypi = [
   "google-cloud-bigquery>=3.0,<4.0",
 ]
+observability = [
+  "prometheus-client>=0.20,<1.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

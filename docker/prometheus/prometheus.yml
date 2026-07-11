@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: dev-trends-streaming
+    static_configs:
+      - targets:
+          - "host.docker.internal:9101" # kafka-to-bronze
+          - "host.docker.internal:9102" # bronze-to-silver

@@ -1,5 +1,9 @@
+from typing import Any
+
 from pyspark.sql import DataFrame
 from pyspark.sql.streaming import StreamingQuery
+
+_AVAILABLE_NOW: dict[str, Any] = {"availableNow": True}
 
 
 def write_silver(
@@ -24,22 +28,33 @@ def write_silver(
     writer.save(output_path)
 
 
-def write_silver_stream(df: DataFrame, output_path: str, checkpoint_path: str) -> StreamingQuery:
-    """Escribe el stream Silver a Delta, particionado por fecha, con availableNow.
+def write_silver_stream(
+    df: DataFrame,
+    output_path: str,
+    checkpoint_path: str,
+    query_name: str = "bronze-to-silver",
+    trigger: dict[str, Any] | None = None,
+) -> StreamingQuery:
+    """Escribe el stream Silver a Delta, particionado por fecha.
 
     Args:
         df: DataFrame de streaming con el esquema Silver.
         output_path: Ruta raíz de la capa Silver (Delta).
         checkpoint_path: Ruta del checkpoint del stream.
+        query_name: Nombre estable de la query; etiqueta las métricas de
+            observabilidad (una serie por nombre, no un UUID por arranque).
+        trigger: Opciones de trigger de Spark (p. ej. {"availableNow": True} o
+            {"processingTime": "5 seconds"}). Por defecto availableNow.
 
     Returns:
         StreamingQuery en ejecución.
     """
     return (
         df.writeStream.format("delta")
+        .queryName(query_name)
         .outputMode("append")
         .partitionBy("year", "month", "day")
         .option("checkpointLocation", checkpoint_path)
-        .trigger(availableNow=True)
+        .trigger(**(trigger or _AVAILABLE_NOW))
         .start(output_path)
     )

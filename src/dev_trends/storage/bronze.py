@@ -1,3 +1,5 @@
+from typing import Any
+
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.streaming import StreamingQuery
@@ -13,6 +15,8 @@ BRONZE_COLUMNS: list[str] = [
     "kafka_timestamp",
     "ingested_at",
 ]
+
+_AVAILABLE_NOW: dict[str, Any] = {"availableNow": True}
 
 
 def to_bronze(df: DataFrame) -> DataFrame:
@@ -54,21 +58,33 @@ def parse_bronze_value(df: DataFrame) -> DataFrame:
     return df.select(F.from_json(F.col("value"), RAW_SCHEMA).alias("data")).select("data.*")
 
 
-def write_bronze_stream(df: DataFrame, output_path: str, checkpoint_path: str) -> StreamingQuery:
-    """Escribe el stream Bronze a Delta con trigger availableNow.
+def write_bronze_stream(
+    df: DataFrame,
+    output_path: str,
+    checkpoint_path: str,
+    query_name: str = "kafka-to-bronze",
+    trigger: dict[str, Any] | None = None,
+) -> StreamingQuery:
+    """Escribe el stream Bronze a Delta.
 
     Args:
         df: DataFrame de streaming con el esquema Bronze.
         output_path: Ruta raíz de la tabla Bronze (Delta).
         checkpoint_path: Ruta del checkpoint (offsets del stream).
+        query_name: Nombre estable de la query; etiqueta las métricas de
+            observabilidad (una serie por nombre, no un UUID por arranque).
+        trigger: Opciones de trigger de Spark (p. ej. {"availableNow": True} o
+            {"processingTime": "5 seconds"}). Por defecto availableNow: procesa
+            lo disponible y termina.
 
     Returns:
         StreamingQuery en ejecución; el llamante decide cuándo esperar.
     """
     return (
         df.writeStream.format("delta")
+        .queryName(query_name)
         .outputMode("append")
         .option("checkpointLocation", checkpoint_path)
-        .trigger(availableNow=True)
+        .trigger(**(trigger or _AVAILABLE_NOW))
         .start(output_path)
     )
