@@ -52,6 +52,7 @@ código y modelado analítico desacoplado.
 | Modelado | dbt |
 | Consulta | AWS Athena |
 | Visualización | Streamlit · Power BI (dashboard analítico) |
+| Observabilidad | Prometheus · Grafana (métricas del streaming) |
 | Infraestructura | Terraform |
 | Orquestación local | Docker Compose |
 
@@ -152,7 +153,10 @@ Misma arquitectura, creciendo en amplitud (más fuentes y piezas de soporte):
       `dbt-expectations`.
 - ~~Métricas compuestas (momentum / salud de comunidad)~~ — **descartadas** tras medir
       las señales; el razonamiento está en «Métricas compuestas: por qué no existen».
-- [ ] Observabilidad del streaming (Prometheus / Grafana).
+- [x] **Observabilidad del streaming (Prometheus / Grafana):** un `StreamingQueryListener`
+      publica las métricas de cada micro-batch (latencia de proceso, filas por micro-batch,
+      retraso de consumo del *topic*) en un *endpoint* que Prometheus recolecta y Grafana
+      visualiza. Opt-in y aislado: si falta la dependencia, el *stream* sigue sin métricas.
 - [ ] Reprocesamiento en Kafka (retención, *offsets*, idempotencia frente al *checkpoint*).
 
 **Mejoras futuras** (evaluadas y pospuestas, no olvidadas):
@@ -220,6 +224,43 @@ make pipeline DATE=2024-01-15 HOURS=0-0
 ```
 
 > El pipeline batch produce **Silver**; la agregación a Gold la construye dbt.
+
+### Observabilidad del streaming (Prometheus / Grafana)
+
+Las *queries* de streaming pueden exponer sus métricas de ejecución a Prometheus,
+visualizadas en un panel de Grafana. Un `StreamingQueryListener` traduce el progreso
+de cada micro-batch a métricas: latencia de proceso, filas por micro-batch, ritmo de
+entrada frente a ritmo de proceso, desglose de la latencia por fase interna, y el
+**retraso de consumo del *topic*** (los *offsets* que le faltan al *stream* para
+alcanzar el final de Kafka). Requiere el extra `observability`
+(`pip install -e ".[observability]"`).
+
+```bash
+make obs-up                          # Kafka + Prometheus + Grafana (perfil obs)
+make topic
+make produce DATE=2026-04-15 HOURS=15-15
+
+make stream-bronze-obs               # Kafka → Bronze, vivo, métricas en :9101
+make stream-silver-obs               # Bronze → Silver, vivo, métricas en :9102
+
+make obs-down                        # detiene el stack de observabilidad
+```
+
+- **Grafana:** `http://localhost:3000` — panel «Streaming Kafka → Silver» (acceso
+  anónimo, sin login).
+- **Prometheus:** `http://localhost:9090` — estado de los *targets* en `/targets`.
+
+A diferencia del flujo normal (que procesa lo disponible y termina), los objetivos
+`*-obs` lanzan el *stream* con un *trigger* continuo para que quede vivo y Prometheus
+pueda recolectarlo. La observabilidad es **opt-in**: no altera el comportamiento de
+`make stream-bronze` / `make stream-silver`, y si el extra no está instalado el *stream*
+corre igualmente sin métricas. El retraso de consumo solo aplica a la etapa
+Kafka → Bronze; la etapa Bronze → Silver lee de Delta, no de un *topic*, así que ese
+panel queda vacío para ella a propósito, no por error.
+
+El *stack* de Grafana se aprovisiona como código (fuente de datos y panel versionados
+en `docker/grafana/`), de modo que se reconstruye igual en cualquier máquina sin
+configuración manual.
 
 ### Segunda fuente: descargas de PyPI (BigQuery)
 
