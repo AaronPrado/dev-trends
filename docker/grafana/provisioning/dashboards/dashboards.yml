@@ -1,0 +1,8 @@
+apiVersion: 1
+
+providers:
+  - name: dev-trends
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
