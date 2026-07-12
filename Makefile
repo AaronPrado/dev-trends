@@ -12,7 +12,7 @@ DBT_PARSE := DEV_TRENDS_DATA_ROOT=$(DATA_ROOT) dbt
 
 TF := terraform -chdir=infra
 
-.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register dashboard pypi-ingest backfill-github dbt-deps obs-up obs-down stream-bronze-obs stream-silver-obs
+.PHONY: help install lint format test check hooks up down pipeline clean topic produce stream-bronze stream-silver stream-silver-s3 dbt-build dbt-test dbt-parse athena-register dashboard pypi-ingest backfill-github dbt-deps obs-up obs-down stream-bronze-obs stream-silver-obs reprocess-window reprocess-window-s3
 
 help:  ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -126,3 +126,11 @@ stream-bronze-obs:  ## Streaming Kafka -> Bronze con métricas Prometheus (trigg
 stream-silver-obs:  ## Streaming Bronze -> Silver con métricas Prometheus (trigger continuo, :9102)
 	python -m dev_trends.pipeline.streaming --stage silver \
 	  --trigger processing-time --trigger-interval "5 seconds" --metrics-port 9102
+
+reprocess-window:  ## Reprocesa una ventana desde Kafka -> Silver local. Uso: make reprocess-window START=2026-04-15 END=2026-04-16
+	python -m dev_trends.pipeline.reprocess --start $(START) --end $(END) --topic $(TOPIC)
+
+reprocess-window-s3: guard-DEV_TRENDS_S3_BUCKET  ## Reprocesa una ventana desde Kafka -> Silver S3. Uso: make reprocess-window-s3 START=... END=...
+	AWS_PROFILE=dev-trends-pipeline python -m dev_trends.pipeline.reprocess \
+	  --start $(START) --end $(END) --topic $(TOPIC) \
+	  --silver-path s3a://$(DEV_TRENDS_S3_BUCKET)/silver
