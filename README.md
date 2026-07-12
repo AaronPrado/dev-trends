@@ -157,7 +157,9 @@ Misma arquitectura, creciendo en amplitud (más fuentes y piezas de soporte):
       publica las métricas de cada micro-batch (latencia de proceso, filas por micro-batch,
       retraso de consumo del *topic*) en un *endpoint* que Prometheus recolecta y Grafana
       visualiza. Opt-in y aislado: si falta la dependencia, el *stream* sigue sin métricas.
-- [ ] Reprocesamiento en Kafka (retención, *offsets*, idempotencia frente al *checkpoint*).
+- [x] **Reprocesamiento dirigido desde Kafka:** relee una ventana de días del *topic*
+      en modo *batch* y reescribe cada partición de Silver de forma idempotente
+      (`replaceWhere`), sin duplicar ni depender del *checkpoint* del *stream*.
 
 **Mejoras futuras** (evaluadas y pospuestas, no olvidadas):
 
@@ -288,6 +290,40 @@ misma ventana con el pipeline batch, escribiendo cada día de forma idempotente
 ```bash
 make backfill-github START=2026-04-01 END=2026-07-01
 ```
+
+### Reprocesar una ventana que llegó mal
+
+"Un día llegó incompleto o mal normalizado" se corrige de una de tres formas, según
+hasta dónde haya que retroceder:
+
+- **Desde el origen** — volver a descargar GH Archive y reescribir Silver
+  (`make backfill-github`, arriba). Siempre disponible; es la opción para ventanas
+  antiguas.
+- **Desde Kafka** — si los eventos siguen en el *topic*, releerlos sin volver a
+  descargar de GH Archive. Es lo que cubre esta sección.
+- *(Desde Bronze — re-derivar Silver del crudo ya ingerido; no expuesto como target.)*
+
+El reproceso desde Kafka relee el *topic* como una *query* **batch** (acotada y que
+termina, a diferencia del *stream*, que corre indefinidamente) y reescribe cada día con
+`replaceWhere` sobre su partición: reejecutarlo no duplica.
+
+```bash
+make reprocess-window START=2026-04-15 END=2026-04-16      # Silver local
+make reprocess-window-s3 START=2026-04-15 END=2026-04-16   # Silver en S3
+```
+
+Dos matices que explican el diseño:
+
+- **La ventana se ancla en la fecha del evento (`created_at`), no en el *offset* de
+  Kafka.** El *timestamp* de un mensaje de Kafka es cuándo se publicó, no cuándo ocurrió
+  el evento en GitHub; por eso el reproceso lee el *topic* y filtra por la partición de
+  fecha, en vez de acotar por un rango de *offsets*.
+- **Depende de la retención del *topic* (~7 días por defecto).** Si la ventana ya
+  expiró, sus eventos ya no están en Kafka: el reproceso **avisa y omite** ese día (no
+  borra lo que hubiera en Silver) y hay que recurrir al backfill desde el origen. El
+  *stream* normal, por su parte, no reprocesa porque lleva sus *offsets* en el
+  *checkpoint*, no en un *consumer group*; este reproceso *batch* es independiente de
+  ese *checkpoint*.
 
 ### Modelado analítico con dbt
 
