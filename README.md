@@ -1,42 +1,142 @@
 # dev-trends
 
-> Plataforma de datos que mide la **actividad de desarrollo** y la **adopción** de
-> tecnologías de software a partir de fuentes públicas (eventos de GitHub vía GH
-> Archive, y descargas de PyPI vía BigQuery). Pipeline de Data Engineering de
-> extremo a extremo: ingesta en streaming y batch, procesamiento distribuido,
-> arquitectura medallion sobre un data lake en AWS y modelado analítico.
+> Plataforma de Data Engineering que mide la **actividad de desarrollo** y la
+> **adopción** de tecnologías de software cruzando dos fuentes públicas: eventos de
+> GitHub (vía GH Archive) y descargas de PyPI (vía BigQuery). Pipeline de extremo a
+> extremo con ingesta en *streaming*, procesamiento distribuido, arquitectura
+> *medallion* sobre un *data lake* en AWS, modelado analítico con dbt, gate de
+> calidad, observabilidad y reprocesamiento dirigido.
 
-> **Estado: V1 completa (etiquetada en `v1.0.0`); ampliándose.** El pipeline base
-> funciona de punta a punta con datos reales: GH Archive → Kafka → Spark Structured
-> Streaming → Silver/Gold en S3 (Delta) → dbt → Athena → Streamlit. Ya integrada una
-> **segunda fuente (PyPI)** para medir adopción, y añadido el **dashboard analítico
-> en Power BI**; el resto de ampliaciones (calidad de datos, observabilidad) están
-> en el roadmap más abajo.
+[![CI](https://github.com/AaronPrado/dev-trends/actions/workflows/ci.yml/badge.svg)](https://github.com/AaronPrado/dev-trends/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org)
+
+![Apache Spark](https://img.shields.io/badge/Apache_Spark-E25A1C?logo=apachespark&logoColor=white)
+![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-231F20?logo=apachekafka&logoColor=white)
+![dbt](https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-844FBA?logo=terraform&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-232F3E?logo=amazonaws&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+
+![Dashboard: comparativa de actividad de desarrollo vs adopción por tecnología](dashboard/powerbi/screenshots/pagina-1-comparativa.png)
 
 ---
 
-## Qué es
+## Índice
+
+- [Qué es y qué pregunta responde](#qué-es-y-qué-pregunta-responde)
+- [Lo que demuestra](#lo-que-demuestra)
+- [Arquitectura](#arquitectura)
+- [Stack](#stack)
+- [Capacidades](#capacidades)
+- [El dashboard](#el-dashboard)
+- [Hallazgos](#hallazgos)
+- [Puesta en marcha](#puesta-en-marcha)
+- [Esquema de datos](#esquema-de-datos)
+- [Calidad de código](#calidad-de-código)
+- [Posibles evoluciones](#posibles-evoluciones)
+- [Licencia](#licencia)
+
+---
+
+## Qué es y qué pregunta responde
 
 `dev-trends` combina dos señales públicas por tecnología:
 
-- **Actividad de desarrollo** — eventos de GitHub (pushes, pull requests, releases…)
-  vía GH Archive: cuánto se *construye* una herramienta.
-- **Adopción** — descargas de paquetes de PyPI vía BigQuery: cuánto se *usa*.
+- **Actividad de desarrollo** — eventos de GitHub (*pushes*, *pull requests*,
+  *releases*, *watches*) vía GH Archive: cuánto se **construye** una herramienta.
+- **Adopción** — descargas de paquetes de PyPI vía BigQuery: cuánto se **usa**.
 
 Cruzando ambas responde preguntas que ninguna fuente contesta sola: qué
 herramientas se construyen mucho pero se usan poco (emergentes), cuáles se usan
 mucho con menos desarrollo (maduras), y hacia dónde va cada una en el tiempo.
 
-El proyecto está diseñado como demostración de un pipeline de Data Engineering
+El proyecto está construido como demostración de un pipeline de Data Engineering
 moderno de principio a fin, con las prácticas que se esperan en producción:
-arquitectura por capas, transición de batch a streaming, infraestructura como
-código y modelado analítico desacoplado.
+ingesta en *streaming*, arquitectura por capas, modelado analítico desacoplado,
+validación de calidad, observabilidad e infraestructura como código.
 
-> **Nota sobre las métricas.** GitHub mide *actividad de desarrollo*
-> (commits, PRs, releases), no adopción en producción. Las descargas de PyPI son un
-> proxy de *uso* inflado por CI/CD, mirrors y bots: se leen como **tendencia
-> relativa por paquete**, no como recuento de usuarios. Por eso se reportan **por
-> fuente** y se comparan por *ranking*, no por magnitud absoluta.
+> **Nota sobre las métricas.** GitHub mide *actividad de desarrollo* (commits, PRs,
+> releases), no adopción en producción. Las descargas de PyPI son un proxy de *uso*
+> inflado por CI/CD, *mirrors* y bots: se leen como **tendencia relativa por
+> paquete**, no como recuento de usuarios. Por eso se reportan **por fuente** y se
+> comparan por *ranking*, no por magnitud absoluta.
+
+<sub>El recorrido vertical inicial (etiquetado en `v1.0.0`) cerró el pipeline de
+extremo a extremo sobre una sola fuente y una pregunta de *actividad*. La versión
+actual lo ensancha a dos fuentes —añadiendo la señal de *adopción*—, un gate de
+calidad de datos, observabilidad del *streaming* y reprocesamiento dirigido.</sub>
+
+---
+
+## Lo que demuestra
+
+- **Ingesta en *streaming* real** — GH Archive → Kafka → Spark Structured
+  Streaming, con procesamiento por micro-batches y *checkpointing*. La lógica de
+  transformación es la misma en *batch* y en *streaming*: no es un *batch*
+  disfrazado.
+- **Dos señales, una pregunta** — actividad (GitHub) y adopción (PyPI) modeladas
+  sobre las **mismas dimensiones conformadas**, para comparar qué se construye
+  frente a qué se usa sobre el mismo periodo.
+- **Modelado analítico desacoplado con dbt** — la capa Gold es un *star schema*
+  aislado de la normalización a Silver, con dimensiones conformadas, hechos a grano
+  diario y tests versionados.
+- **Gate de calidad de datos** — validez estructural que **detiene** el *build*
+  ante corrupción, más detección de **anomalías de negocio** que avisa sin frenar,
+  con los tests nativos de dbt y `dbt-expectations`.
+- **Observabilidad del *streaming*** — cada micro-batch publica sus métricas
+  (latencia, filas procesadas, *lag* de consumo de Kafka) a Prometheus,
+  visualizadas en un Grafana aprovisionado como código.
+- **Reprocesamiento dirigido e idempotente** — relee una ventana de días desde
+  Kafka y reescribe cada partición de Silver con `replaceWhere`, sin duplicar y sin
+  depender del *checkpoint* del *stream*.
+- **Infraestructura como código** — todo el AWS (S3 del *medallion*, Glue Data
+  Catalog, workgroup de Athena con tope de coste, IAM de mínimo privilegio) se
+  declara en Terraform.
+
+---
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    GH["GH Archive<br/>(eventos GitHub)"] -->|streaming| K["Apache Kafka"]
+    K --> SP["Spark<br/>Structured Streaming"]
+    PY["BigQuery<br/>(descargas PyPI)"] -->|batch · agregado| SP
+
+    subgraph AWS["AWS · S3 + Delta Lake (medallion)"]
+        BR["Bronze<br/>(GitHub crudo)"]
+        SV["Silver<br/>(normalizado)"]
+        GD["Gold<br/>(star schema)"]
+        BR --> SV
+        SV -->|dbt| GD
+    end
+
+    SP --> BR
+    SP -. PyPI .-> SV
+    GD --> GL["Glue Catalog"]
+    GL --> AT["Athena"]
+    AT --> DASH["Power BI · Streamlit"]
+
+    TF["Terraform"] -. aprovisiona .-> BR
+    OBS["Prometheus · Grafana"] -. observa .-> SP
+```
+
+Arquitectura **medallion** sobre Delta Lake:
+
+- **Bronze** — eventos crudos de GitHub, tal cual llegan de Kafka (solo la fuente de
+  GitHub pasa por Bronze).
+- **Silver** — datos normalizados y particionados por fecha: un evento de GitHub por
+  fila, y las descargas de PyPI agregadas por día y paquete. Su esquema está
+  **congelado** para que dbt construya encima sin romper capas anteriores.
+- **Gold** — hechos analíticos a grano diario modelados con dbt:
+  `fact_github_activity` (actividad) y `fact_pypi_downloads` (adopción), sobre
+  dimensiones conformadas (`dim_technology`, `dim_date`, `dim_event_type`,
+  `dim_source`).
+
+**Entorno híbrido:** el cómputo (Kafka, Spark, dbt) corre en local sobre Docker; el
+almacenamiento y la consulta (S3, Glue, Athena) viven en AWS. Así el pipeline
+ejercita servicios *cloud* reales sin coste de cómputo continuo.
 
 ---
 
@@ -45,43 +145,340 @@ código y modelado analítico desacoplado.
 | Capa | Tecnología |
 |---|---|
 | Fuentes | GH Archive (eventos de GitHub) · BigQuery (descargas de PyPI) |
-| Ingesta | Apache Kafka (streaming) · cliente de BigQuery (agregación en origen) |
+| Ingesta | Apache Kafka (*streaming*) · cliente de BigQuery (agregación en origen) |
 | Procesamiento | Apache Spark (Structured Streaming) |
-| Almacenamiento | AWS S3 + Delta Lake (arquitectura medallion) |
+| Almacenamiento | AWS S3 + Delta Lake (arquitectura *medallion*) |
 | Catálogo | AWS Glue Data Catalog |
 | Modelado | dbt |
+| Calidad de datos | dbt tests · `dbt-expectations` |
 | Consulta | AWS Athena |
-| Visualización | Streamlit · Power BI (dashboard analítico) |
-| Observabilidad | Prometheus · Grafana (métricas del streaming) |
+| Visualización | Power BI (dashboard analítico) · Streamlit (dashboard local) |
+| Observabilidad | Prometheus · Grafana (métricas del *streaming*) |
 | Infraestructura | Terraform |
 | Orquestación local | Docker Compose |
 
-**Entorno híbrido:** el cómputo (Kafka, Spark, dbt) corre en local sobre Docker;
-el almacenamiento y la consulta (S3, Glue, Athena) viven en AWS.
+---
+
+## Capacidades
+
+### Ingesta en *streaming* (Kafka → Spark)
+
+El pipeline ingiere los eventos de GitHub como un flujo: GH Archive se publica en un
+*topic* de Kafka y Spark Structured Streaming lo consume en dos *queries* encadenadas
+(Kafka → Bronze, Bronze → Silver), con *checkpointing* para reanudar sin duplicar.
+
+La misma función de normalización `df -> df` alimenta el modo *batch* y el
+*streaming*: el centro de la lógica no cambia al pasar de uno a otro. Se desarrolla
+con **una hora** de datos y el mismo flujo escala a un día o más cambiando solo el
+rango, sin tocar la transformación.
+
+```bash
+make up                              # levanta Kafka (KRaft) en Docker
+make topic                           # crea el topic de eventos crudos
+make produce DATE=2026-04-15 HOURS=15-15   # publica una hora de GH Archive en Kafka
+
+make stream-bronze                   # Kafka → Bronze (Delta)
+make stream-silver                   # Bronze → Silver (Delta), en local
+make down                            # detiene Kafka
+```
+
+> **Silver en S3:** `make stream-silver-s3` escribe Silver en `s3a://<bucket>/silver`
+> con el perfil AWS de mínimo privilegio; Bronze y los *checkpoints* permanecen en
+> local.
+
+### Segunda fuente: adopción vía PyPI (BigQuery)
+
+La ingesta de PyPI consulta el dataset público de BigQuery, **agrega en origen**
+(día × paquete) y trae solo el agregado a Silver, con guardas de coste: un *dry-run*
+mide los bytes antes de gastar y `maximum_bytes_billed` es un tope duro. Con esta
+fuente `dim_source` pasa a ser real y `dim_date` cubre la unión de rangos de ambas
+fuentes; GitHub se *backfillea* a la misma ventana para comparar actividad y adopción
+sobre el mismo periodo.
+
+```bash
+# Estimación de escaneo, sin ejecutar ni escribir (mide bytes en BigQuery):
+python -m dev_trends.pipeline.pypi_downloads --start 2026-04-01 --end 2026-07-01 \
+  --dry-run --project <tu-proyecto-gcp>
+
+# Backfill real a Silver en S3 (requiere DEV_TRENDS_S3_BUCKET y DEV_TRENDS_GCP_PROJECT):
+make pypi-ingest START=2026-04-01 END=2026-07-01
+
+# GitHub a la misma ventana, idempotente por partición (replaceWhere):
+make backfill-github START=2026-04-01 END=2026-07-01
+```
+
+> Las credenciales de GCP (ADC) viven en `~/.config/gcloud` y **nunca** se versionan.
+
+### Modelado analítico con dbt
+
+dbt construye la capa **Gold** como *star schema* sobre el Silver ya escrito, con el
+adapter `dbt-spark` (método `session`). Las dimensiones conformadas y los hechos
+`fact_github_activity` (actividad) y `fact_pypi_downloads` (adopción) se materializan
+como tablas Delta en **S3**, a grano diario y sobre las mismas dimensiones. La
+frontera Silver/Gold es limpia: la agregación vive en dbt, aislada de la
+normalización.
+
+```bash
+export DEV_TRENDS_S3_BUCKET=<bucket-medallion>   # p. ej. dev-trends-medallion-<account_id>
+make dbt-build    # seeds + modelos + tests, escribiendo Gold en s3a://<bucket>/gold
+make dbt-parse    # valida el proyecto sin conexión (igual que la CI)
+```
+
+> El nombre del bucket se pasa por `DEV_TRENDS_S3_BUCKET` (no se versiona: lleva el
+> identificador de cuenta). Los *reruns* son idempotentes.
+
+### Calidad de datos
+
+Un gate de calidad valida la capa **Silver** antes de consolidarla en los hechos de
+**Gold**, con dos familias de reglas:
+
+- **Validez estructural** (el contrato de Silver): cada evento tiene `event_id`
+  único y no nulo, `technology`/`event_type`/`created_at` presentes, `event_type`
+  dentro del dominio esperado y `repository` con formato `org/repo`. Si algo falla,
+  el *build* **se detiene**: es corrupción y no debe llegar a los modelos.
+- **Anomalías de negocio**: patrones que sesgan la interpretación aunque el dato sea
+  correcto. Se emiten como **aviso** (no detienen el *build*): el dato es real, solo
+  hay que no leerlo de forma ingenua.
+
+Se implementa con los **tests nativos de dbt** más `dbt-expectations`: el pipeline ya
+usa dbt para el modelado y los agregados que la detección necesita ya existen en
+Gold, así que la validación vive junto a los datos que valida, sin añadir un motor
+aparte.
+
+Un ejemplo real: un test marca los días en que una tecnología acumula mucha actividad
+de `push` con *pull requests* casi ausentes — la firma de la **automatización** (bots
+o CI que empujan *commits* sin revisión), que no es desarrollo humano pero infla la
+actividad. Sobre los datos reales señala **dbt el 2026-06-01: 931 *pushes* y 0 PRs**,
+un día que vale **22 veces la mediana diaria de ese mes**. El test opera a grano
+**diario** por diseño: sobre el agregado mensual ese pico pasa inadvertido.
+
+```bash
+make dbt-deps    # instala dbt-expectations, una sola vez
+make dbt-build   # construye Gold y ejecuta TODOS los tests (estructurales + anomalías)
+make dbt-test    # solo los tests, sobre el Gold ya construido
+```
+
+### Observabilidad del *streaming* (Prometheus / Grafana)
+
+Las *queries* de *streaming* exponen sus métricas de ejecución a Prometheus,
+visualizadas en un panel de Grafana. Un `StreamingQueryListener` traduce el progreso
+de cada micro-batch a métricas: latencia de proceso, filas por micro-batch, ritmo de
+entrada frente a ritmo de proceso, desglose de la latencia por fase interna, y el
+**retraso de consumo del *topic*** (los *offsets* que le faltan al *stream* para
+alcanzar el final de Kafka).
+
+```bash
+make obs-up                          # Kafka + Prometheus + Grafana (perfil obs)
+make topic
+make produce DATE=2026-04-15 HOURS=15-15
+
+make stream-bronze-obs               # Kafka → Bronze, vivo, métricas en :9101
+make stream-silver-obs               # Bronze → Silver, vivo, métricas en :9102
+make obs-down                        # detiene el stack de observabilidad
+```
+
+- **Grafana:** `http://localhost:3000` — panel «Streaming Kafka → Silver» (acceso
+  anónimo, sin login).
+- **Prometheus:** `http://localhost:9090` — estado de los *targets* en `/targets`.
+
+La observabilidad es **opt-in** y está aislada: no altera el comportamiento de
+`make stream-bronze` / `make stream-silver`, y si el extra `observability` no está
+instalado el *stream* corre igualmente sin métricas. Los objetivos `*-obs` lanzan el
+*stream* con un *trigger* continuo para que quede vivo y Prometheus pueda
+recolectarlo. El *stack* de Grafana se aprovisiona como código (fuente de datos y
+panel versionados en `docker/grafana/`), de modo que se reconstruye igual en
+cualquier máquina.
+
+### Reprocesamiento dirigido desde Kafka
+
+Cuando un día llega incompleto o mal normalizado, se corrige según hasta dónde haya
+que retroceder. Uno de esos caminos relee la ventana **desde Kafka** sin volver a
+descargar de GH Archive: lee el *topic* como una *query* **batch** (acotada y que
+termina, a diferencia del *stream*) y reescribe cada día con `replaceWhere` sobre su
+partición, de forma idempotente — reejecutarlo no duplica.
+
+```bash
+make reprocess-window START=2026-04-15 END=2026-04-16      # Silver local
+make reprocess-window-s3 START=2026-04-15 END=2026-04-16   # Silver en S3
+```
+
+Dos matices que explican el diseño:
+
+- **La ventana se ancla en la fecha del evento (`created_at`), no en el *offset* de
+  Kafka.** El *timestamp* de un mensaje de Kafka es cuándo se publicó, no cuándo
+  ocurrió el evento en GitHub; por eso el reproceso lee el *topic* y filtra por la
+  partición de fecha, en vez de acotar por un rango de *offsets*.
+- **Depende de la retención del *topic*** (~7 días por defecto). Si la ventana ya
+  expiró, el reproceso **avisa y omite** ese día (no borra lo que hubiera en Silver)
+  y hay que recurrir al *backfill* desde el origen (`make backfill-github`). El
+  *stream* normal no reprocesa porque lleva sus *offsets* en el *checkpoint*, no en
+  un *consumer group*; este reproceso *batch* es independiente de ese *checkpoint*.
+
+### Infraestructura como código (Terraform)
+
+La infraestructura de almacenamiento y consulta se declara en `infra/`: los buckets
+S3 del *medallion* y de resultados de Athena, la base de datos del Glue Data Catalog,
+el workgroup de Athena (con tope de datos escaneados como guarda de coste), dos
+usuarios IAM de mínimo privilegio —uno de lectura y escritura para el pipeline, y
+otro de **solo lectura** para el dashboard de Power BI— y una alerta de presupuesto
+mensual.
+
+```bash
+cd infra
+cp example.tfvars terraform.tfvars   # y pon tu email para la alerta de presupuesto
+terraform init
+terraform plan
+terraform apply
+```
+
+Para revisar el proyecto **sin credenciales** (igual que la CI):
+
+```bash
+cd infra
+terraform fmt -check -recursive
+terraform init -backend=false
+terraform validate
+```
+
+> El estado de Terraform (`terraform.tfstate`), el `terraform.tfvars` y cualquier
+> `*.tfvars` con valores propios **no se versionan**; sí se versiona `example.tfvars`
+> como plantilla. Las claves de acceso de IAM nunca se declaran en Terraform (el
+> secreto acabaría en el estado en claro): se gestionan fuera del código.
 
 ---
 
-## Arquitectura
+## El dashboard
 
+El dashboard analítico definitivo está en **Power BI** (`dashboard/powerbi/`) y lee la
+capa Gold desde Athena: los agregados se cargan una vez (*Import mode*) y toda la
+interacción es local, sin re-escanear Athena. Se conecta con un usuario IAM de **solo
+lectura** dedicado. Cruza `fact_github_activity` (actividad) y `fact_pypi_downloads`
+(adopción) sobre las dimensiones conformadas, en tres páginas:
+
+1. **Comparativa** — *rankings* de actividad (GitHub) vs adopción (PyPI) por
+   tecnología para el periodo seleccionado. Al elegir una tecnología se resalta en
+   ambos *rankings* y las tarjetas y el logo se adaptan a ella.
+2. **Tendencia en el tiempo** — *small multiples* de las cinco tecnologías, cada
+   serie normalizada a su propio máximo (media móvil de 7 días, % del pico): compara
+   la **dirección** de actividad y adopción en el tiempo, no su magnitud.
+3. **Detalle por tecnología** (*drillthrough*) — su posición en cada *ranking*, el
+   **desglose por tipo de evento** (push, pull request, release, watch) y su
+   tendencia. El desglose expone la *calidad* de la actividad: *pushes* ≈ PRs refleja
+   desarrollo humano; *pushes* ≫ PRs delata automatización.
+
+![Comparativa: actividad vs adopción por tecnología](dashboard/powerbi/screenshots/pagina-1-comparativa.png)
+![Tendencia normalizada por tecnología](dashboard/powerbi/screenshots/pagina-2-tendencia.png)
+![Detalle por tecnología con desglose por tipo de evento](dashboard/powerbi/screenshots/pagina-3-detalle.png)
+
+> La conexión se configura con un DSN ODBC de Athena.
+
+Existe además un **dashboard ligero en Streamlit** (`make dashboard`), pensado para
+inspección local: lee Gold desde Athena y muestra la evolución diaria de actividad
+por tecnología para un rango de fechas, cacheando la consulta en la sesión para no
+re-escanear en cada interacción.
+
+![Dashboard local en Streamlit: evolución diaria de actividad](docs/dashboard-streamlit.png)
+
+---
+
+## Hallazgos
+
+El proyecto no solo mueve datos: los datos reales cuentan algo, y el pipeline está
+verificado contra su fuente (se contrastó el crudo de GH Archive con la capa Silver
+para horas concretas y los conteos coinciden evento a evento).
+
+### La actividad de estos repositorios se está automatizando
+
+El desglose por tipo de evento a lo largo del trimestre analizado muestra un
+desplazamiento sostenido del trabajo humano al automatizado:
+
+| mes | pull_request | push | release | watch | % humano |
+|---|---|---|---|---|---|
+| abril | 1014 | 1056 | 7 | 242 | 44 % |
+| mayo | 671 | 1430 | 4 | 137 | 30 % |
+| junio | 184 | 2017 | 2 | 57 | 8 % |
+
+`pull_request` cae en las cinco tecnologías (entre −66 % y −100 %) y `watch` un 76 %,
+mientras `push` se dispara. **No es que GitHub estuviera más tranquilo:** los ficheros
+horarios del origen traen 158 392 eventos en abril y 157 497 en junio. Son estos cinco
+repositorios los que se han vuelto *push-only*. Conviene desglosar por tecnología
+antes de leer el agregado: el crecimiento de `push` es casi todo de un solo
+repositorio (dbt, ×12 entre abril y junio). Descontándolo, junio suma 944 *pushes*
+contra 968 en abril — plano.
+
+### Métricas compuestas: por qué no existen
+
+Se evaluó un *Momentum Score* que combinara actividad (GitHub) y adopción (PyPI) por
+tecnología. Se descartó tras medir las señales, y el motivo merece contarse.
+
+Las dos fuentes miden magnitudes incomparables: descargas en cientos de millones
+frente a eventos en decenas por día. Lo único que se puede componer entre ellas son
+**tasas de variación** adimensionales, nunca los niveles. Y toda tasa necesita un
+denominador con volumen suficiente — que la señal de desarrollo humano no tiene: los
+cinco repositorios suman **13 releases en todo el trimestre**, y
+`dagster-io/dagster` registra entre 0 y 8 *pull requests* al mes. Un cociente sobre
+contadores de una cifra no mide impulso, mide ruido de muestreo. No lo arregla
+ampliar el histórico: tres meses es la ventana completa.
+
+La divergencia entre *cuánto se construye* una herramienta y *cuánto se usa* —el
+hallazgo que el *score* pretendía resumir en un número— ya está disponible sin él: los
+*rankings* de actividad y de adopción se comparan directamente en el dashboard, cada
+uno en su escala y sin promediarlos. Un índice que promedia dos señales incomparables
+esconde más de lo que explica.
+
+---
+
+## Puesta en marcha
+
+**Requisitos previos:**
+
+- Docker y Docker Compose
+- Python 3.11+
+- Terraform 1.6+ (para aprovisionar la infraestructura AWS)
+- Una cuenta de AWS (las capas de almacenamiento usan el *free tier*)
+- Credenciales de AWS configuradas (variables de entorno o `~/.aws/credentials`)
+- Para la ingesta de PyPI: un proyecto de GCP (BigQuery Sandbox, sin tarjeta) con
+  credenciales ADC (`gcloud auth application-default login`) y el extra `pypi`
+  instalado (`pip install -e ".[pypi]"`)
+
+> Las credenciales de AWS y GCP **nunca** se versionan. Consulta `.gitignore` y usa un
+> fichero `.env` local (excluido del control de versiones).
+
+**Recorrido mínimo de extremo a extremo (local):**
+
+```bash
+pip install -e ".[dev]"              # instala el paquete y las herramientas
+
+make up                              # Kafka (KRaft) en Docker
+make topic
+make produce DATE=2026-04-15 HOURS=15-15   # una hora de GH Archive → Kafka
+make stream-bronze                   # Kafka → Bronze (Delta)
+make stream-silver                   # Bronze → Silver (Delta)
+make down
 ```
-GH Archive ──────▶ Kafka ──▶ Spark ─┐
-                                     ├─▶ S3 / Delta (medallion) ──▶ Athena ──▶ Dashboard
-BigQuery (PyPI) ──────────▶ Spark ──┘   Bronze → Silver → Gold
-                                                      (dbt)
 
-           Terraform aprovisiona la infraestructura AWS (S3, Glue, Athena, IAM)
+A partir de ahí, cada [capacidad](#capacidades) documenta sus propios comandos:
+segunda fuente (PyPI), modelado con dbt, calidad de datos, observabilidad,
+reprocesamiento e infraestructura. Para consultar el Gold desde Athena, las tablas se
+registran una sola vez en Glue:
+
+```bash
+make athena-register    # registra las tablas Gold en Glue (solo la primera vez)
 ```
 
-- **Bronze:** eventos crudos de GH Archive, tal cual (solo la fuente de GitHub).
-- **Silver:** datos normalizados y particionados por fecha — un evento de GitHub por
-  fila, y las descargas de PyPI agregadas por día y paquete.
-- **Gold:** hechos analíticos a grano diario modelados con dbt — `fact_github_activity`
-  (actividad) y `fact_pypi_downloads` (adopción), sobre dimensiones conformadas.
+> El registro es de **una sola vez**: tras cada `dbt build` posterior, Athena lee la
+> versión nueva de cada tabla directamente del *log* de transacciones de Delta, sin
+> volver a registrarla.
 
-### Esquema Silver
+---
 
-Un evento por fila, particionado por fecha (`year`/`month`/`day`). Congelado desde
-la Fase 1 para que dbt pudiera construirse encima sin romper capas anteriores:
+## Esquema de datos
+
+<details>
+<summary><strong>Silver — eventos de GitHub</strong> (un evento por fila, particionado por fecha)</summary>
+
+Congelado desde el primer recorrido para que dbt construya encima sin romper capas
+anteriores:
 
 | Columna | Tipo | Descripción |
 |---|---|---|
@@ -96,10 +493,13 @@ la Fase 1 para que dbt pudiera construirse encima sin romper capas anteriores:
 No incluye el actor del evento (PII, y no aporta a la pregunta de actividad por
 tecnología).
 
-### Esquema Silver de descargas PyPI
+</details>
 
-Descargas agregadas por día y paquete (la agregación fina se hace en BigQuery; la
-suma por tecnología la construye dbt en Gold), particionado por fecha:
+<details>
+<summary><strong>Silver — descargas de PyPI</strong> (agregadas por día y paquete)</summary>
+
+La agregación fina se hace en BigQuery; la suma por tecnología la construye dbt en
+Gold. Particionado por fecha:
 
 | Columna | Tipo | Descripción |
 |---|---|---|
@@ -109,424 +509,36 @@ suma por tecnología la construye dbt en Gold), particionado por fecha:
 | `download_count` | long | Descargas del paquete ese día. |
 | `year` / `month` / `day` | int | Partición derivada de `download_date`. |
 
----
-
-## Estado del proyecto
-
-Construcción por fases. El orden prioriza las tecnologías núcleo y deja un
-pipeline funcional de extremo a extremo lo antes posible.
-
-**V1 — recorrido vertical completo (etiquetada en `v1.0.0`):**
-
-- [x] **Fase 1 — Spark (batch):** ingesta de ficheros de GH Archive, parseo y
-      normalización a Silver. (La agregación a Gold inicial era provisional; la
-      asume dbt en la Fase 3.)
-- [x] **Fase 2 — Kafka + streaming:** ingesta vía Kafka y migración a Spark
-      Structured Streaming (Kafka → Bronze → Silver, con trigger `availableNow`).
-      La agregación a Gold se reserva para dbt (Fase 3).
-- [x] **Fase 3 — dbt:** modelado de la capa Gold como *star schema* (dimensiones
-      `dim_technology`, `dim_date`, `dim_event_type`, `dim_source` y hecho
-      `fact_github_activity`) sobre Silver, con tests de dbt.
-- [x] **Fase 4 — Terraform:** infraestructura AWS como código (S3 del medallion,
-      Glue Data Catalog, workgroup de Athena con tope de escaneo, IAM de mínimo
-      privilegio y alerta de presupuesto).
-- [x] **Cutover a AWS:** el pipeline escribe Silver y Gold en S3 (Delta) vía `s3a`;
-      el Gold se registra en el Glue Data Catalog y se consulta desde Athena, que
-      lee Delta de forma nativa (sin generar manifiestos).
-- [x] **Dashboard:** visualización en Streamlit, con la evolución diaria de actividad
-      por tecnología y el total por tecnología para el rango seleccionado, leyendo de
-      Athena.
-
-### V_final — Amplificación
-
-Misma arquitectura, creciendo en amplitud (más fuentes y piezas de soporte):
-
-- [x] **PyPI como 2ª fuente (adopción):** ingesta de descargas de PyPI desde BigQuery
-      (agregadas en origen, con guardas de coste), normalizadas a Silver y modeladas
-      con dbt como `fact_pypi_downloads`. `dim_source` pasa a ser real y `dim_date`
-      cubre la unión de rangos de ambas fuentes; GitHub se backfillea a la misma
-      ventana para comparar actividad vs adopción sobre el mismo periodo.
-- [x] **Dashboard analítico en Power BI** (lee de Athena): comparación de actividad
-      vs adopción por tecnología y fecha, con detalle por tecnología (*drillthrough*).
-- [x] **Validación de calidad de datos:** gate sobre la capa Silver (validez
-      estructural + detección de anomalías de negocio) con los tests de dbt y
-      `dbt-expectations`.
-- ~~Métricas compuestas (momentum / salud de comunidad)~~ — **descartadas** tras medir
-      las señales; el razonamiento está en «Métricas compuestas: por qué no existen».
-- [x] **Observabilidad del streaming (Prometheus / Grafana):** un `StreamingQueryListener`
-      publica las métricas de cada micro-batch (latencia de proceso, filas por micro-batch,
-      retraso de consumo del *topic*) en un *endpoint* que Prometheus recolecta y Grafana
-      visualiza. Opt-in y aislado: si falta la dependencia, el *stream* sigue sin métricas.
-- [x] **Reprocesamiento dirigido desde Kafka:** relee una ventana de días del *topic*
-      en modo *batch* y reescribe cada partición de Silver de forma idempotente
-      (`replaceWhere`), sin duplicar ni depender del *checkpoint* del *stream*.
-
-**Mejoras futuras** (evaluadas y pospuestas, no olvidadas):
-
-- **Catálogo completo de tecnologías** (Backend, IA). El pipeline ya es agnóstico al
-  número de repositorios: ampliarlo son filas en un *seed*, sin código ni conceptos
-  nuevos. A cambio obliga a reingerir la ventana completa de GH Archive, porque el
-  filtrado por tecnología precede a la capa Silver.
-- **Más *topics* en Kafka** (`pypi-releases`, `technology-metadata`). Las *releases* de
-  PyPI se obtienen de una API REST paginada, no de un flujo continuo: publicarlas en un
-  *topic* repetiría el patrón del productor existente sin ejercitar nada nuevo.
-- **Más fuentes de adopción**: Docker Hub, npm, Maven Central.
-
----
-
-## Puesta en marcha
-
-> Las instrucciones detalladas se añadirán conforme avance la implementación.
-
-**Requisitos previos:**
-
-- Docker y Docker Compose
-- Python 3.11+
-- Terraform 1.6+ (para aprovisionar la infraestructura AWS)
-- Una cuenta de AWS (las capas de almacenamiento usan el free tier)
-- Credenciales de AWS configuradas (variables de entorno o `~/.aws/credentials`)
-- Para la ingesta de PyPI: un proyecto de GCP (BigQuery Sandbox, sin tarjeta) con
-  credenciales ADC (`gcloud auth application-default login`) y el extra `pypi`
-  instalado (`pip install -e ".[pypi]"`)
-
-> Las credenciales de AWS **nunca** se versionan. Consulta `.gitignore` y usa un
-> fichero `.env` local (excluido del control de versiones).
-
-### Flujo local (V1, streaming)
-
-El pipeline de streaming corre en local sobre Kafka (Docker) y Spark. El esquema
-medallion se construye en dos *queries* de streaming encadenadas (Kafka → Bronze,
-Bronze → Silver):
-
-```bash
-make up                              # levanta Kafka (KRaft) en Docker
-make topic                           # crea el topic github.push.raw
-
-# Ingesta: publica los PushEvent de una hora de GH Archive en Kafka
-make produce DATE=2024-01-15 HOURS=0-0
-
-# Streaming Kafka → Bronze → Silver (Delta)
-make stream-bronze
-make stream-silver                   # Silver en local (data/silver)
-
-make down                            # detiene Kafka
-```
-
-> Se desarrolla con **1 hora** de datos; el mismo flujo escala a 1 día o más
-> cambiando solo `DATE`/`HOURS`, sin tocar la lógica de transformación.
-
-> **Entorno híbrido (Silver en S3):** `make stream-silver-s3` escribe el Silver en
-> `s3a://<bucket>/silver` con el perfil de mínimo privilegio (requiere
-> `DEV_TRENDS_S3_BUCKET`); Bronze y los checkpoints permanecen en local.
-
-El pipeline **batch** original (Fase 1) sigue disponible como alternativa:
-
-```bash
-make pipeline DATE=2024-01-15 HOURS=0-0
-```
-
-> El pipeline batch produce **Silver**; la agregación a Gold la construye dbt.
-
-### Observabilidad del streaming (Prometheus / Grafana)
-
-Las *queries* de streaming pueden exponer sus métricas de ejecución a Prometheus,
-visualizadas en un panel de Grafana. Un `StreamingQueryListener` traduce el progreso
-de cada micro-batch a métricas: latencia de proceso, filas por micro-batch, ritmo de
-entrada frente a ritmo de proceso, desglose de la latencia por fase interna, y el
-**retraso de consumo del *topic*** (los *offsets* que le faltan al *stream* para
-alcanzar el final de Kafka). Requiere el extra `observability`
-(`pip install -e ".[observability]"`).
-
-```bash
-make obs-up                          # Kafka + Prometheus + Grafana (perfil obs)
-make topic
-make produce DATE=2026-04-15 HOURS=15-15
-
-make stream-bronze-obs               # Kafka → Bronze, vivo, métricas en :9101
-make stream-silver-obs               # Bronze → Silver, vivo, métricas en :9102
-
-make obs-down                        # detiene el stack de observabilidad
-```
-
-- **Grafana:** `http://localhost:3000` — panel «Streaming Kafka → Silver» (acceso
-  anónimo, sin login).
-- **Prometheus:** `http://localhost:9090` — estado de los *targets* en `/targets`.
-
-A diferencia del flujo normal (que procesa lo disponible y termina), los objetivos
-`*-obs` lanzan el *stream* con un *trigger* continuo para que quede vivo y Prometheus
-pueda recolectarlo. La observabilidad es **opt-in**: no altera el comportamiento de
-`make stream-bronze` / `make stream-silver`, y si el extra no está instalado el *stream*
-corre igualmente sin métricas. El retraso de consumo solo aplica a la etapa
-Kafka → Bronze; la etapa Bronze → Silver lee de Delta, no de un *topic*, así que ese
-panel queda vacío para ella a propósito, no por error.
-
-El *stack* de Grafana se aprovisiona como código (fuente de datos y panel versionados
-en `docker/grafana/`), de modo que se reconstruye igual en cualquier máquina sin
-configuración manual.
-
-### Segunda fuente: descargas de PyPI (BigQuery)
-
-La ingesta de PyPI consulta el dataset público de BigQuery, **agrega en origen**
-(día × paquete) y trae solo el agregado a Silver, con guardas de coste: un dry-run
-mide los bytes antes de gastar y `maximum_bytes_billed` es un tope duro.
-
-```bash
-# Estimación de escaneo, sin ejecutar ni escribir (mide bytes en BigQuery):
-python -m dev_trends.pipeline.pypi_downloads --start 2026-04-01 --end 2026-07-01 \
-  --dry-run --project <tu-proyecto-gcp>
-
-# Backfill real a Silver en S3 (requiere DEV_TRENDS_S3_BUCKET y DEV_TRENDS_GCP_PROJECT):
-make pypi-ingest START=2026-04-01 END=2026-07-01
-```
-
-> Las credenciales de GCP (ADC) viven en `~/.config/gcloud` y **nunca** se versionan.
-
-### Backfill de GitHub a una ventana amplia
-
-Para comparar actividad y adopción sobre el mismo periodo, GitHub se carga a la
-misma ventana con el pipeline batch, escribiendo cada día de forma idempotente
-(`replaceWhere` por partición: re-lanzar el rango no duplica eventos):
-
-```bash
-make backfill-github START=2026-04-01 END=2026-07-01
-```
-
-### Reprocesar una ventana que llegó mal
-
-"Un día llegó incompleto o mal normalizado" se corrige de una de tres formas, según
-hasta dónde haya que retroceder:
-
-- **Desde el origen** — volver a descargar GH Archive y reescribir Silver
-  (`make backfill-github`, arriba). Siempre disponible; es la opción para ventanas
-  antiguas.
-- **Desde Kafka** — si los eventos siguen en el *topic*, releerlos sin volver a
-  descargar de GH Archive. Es lo que cubre esta sección.
-- *(Desde Bronze — re-derivar Silver del crudo ya ingerido; no expuesto como target.)*
-
-El reproceso desde Kafka relee el *topic* como una *query* **batch** (acotada y que
-termina, a diferencia del *stream*, que corre indefinidamente) y reescribe cada día con
-`replaceWhere` sobre su partición: reejecutarlo no duplica.
-
-```bash
-make reprocess-window START=2026-04-15 END=2026-04-16      # Silver local
-make reprocess-window-s3 START=2026-04-15 END=2026-04-16   # Silver en S3
-```
-
-Dos matices que explican el diseño:
-
-- **La ventana se ancla en la fecha del evento (`created_at`), no en el *offset* de
-  Kafka.** El *timestamp* de un mensaje de Kafka es cuándo se publicó, no cuándo ocurrió
-  el evento en GitHub; por eso el reproceso lee el *topic* y filtra por la partición de
-  fecha, en vez de acotar por un rango de *offsets*.
-- **Depende de la retención del *topic* (~7 días por defecto).** Si la ventana ya
-  expiró, sus eventos ya no están en Kafka: el reproceso **avisa y omite** ese día (no
-  borra lo que hubiera en Silver) y hay que recurrir al backfill desde el origen. El
-  *stream* normal, por su parte, no reprocesa porque lleva sus *offsets* en el
-  *checkpoint*, no en un *consumer group*; este reproceso *batch* es independiente de
-  ese *checkpoint*.
-
-### Modelado analítico con dbt
-
-dbt construye la capa **Gold** como *star schema* sobre el Silver ya escrito, con el
-adapter `dbt-spark` (método `session`). Las dimensiones conformadas y los hechos
-`fact_github_activity` (actividad) y `fact_pypi_downloads` (adopción) se materializan
-como tablas Delta en **S3**, a grano diario y sobre las mismas dimensiones.
-
-```bash
-export DEV_TRENDS_S3_BUCKET=<bucket-medallion>   # p. ej. dev-trends-medallion-<account_id>
-make dbt-build    # seeds + modelos + tests, escribiendo el Gold en s3a://<bucket>/gold
-make dbt-parse    # valida el proyecto sin conexión (igual que la CI)
-```
-
-> `make dbt-build` usa el perfil AWS `dev-trends-pipeline` (mínimo privilegio). El
-> nombre del bucket se pasa por `DEV_TRENDS_S3_BUCKET` (no se versiona: lleva el
-> identificador de cuenta). Los reruns son idempotentes.
-
-### Calidad de datos
-
-El pipeline valida la capa **Silver** antes de consolidarla en los hechos
-analíticos de **Gold**, con un gate de calidad de datos de dos familias:
-
-- **Validez estructural** (el contrato de la capa Silver): cada evento tiene
-  `event_id` único y no nulo, `technology`/`event_type`/`created_at` presentes,
-  `event_type` dentro del dominio esperado (`push`, `pull_request`, `release`,
-  `watch`) y `repository` con formato `org/repo`. Si algo falla, el *build* **se
-  detiene**: es corrupción y no debe llegar a los modelos.
-- **Anomalías de negocio**: patrones que sesgan la interpretación aunque el dato
-  sea correcto. Se emiten como **aviso** (no detienen el *build*): el dato es real,
-  solo hay que no leerlo de forma ingenua.
-
-Se implementa con los **tests nativos de dbt** más el paquete **`dbt-expectations`**. 
-El pipeline ya usa dbt para el modelado, los agregados que la detección de anomalías 
-necesita ya existen en la capa Gold, y así la validación vive junto a los datos que valida, 
-sin añadir un motor aparte ni una dependencia pesada.
-
-Un ejemplo concreto de anomalía: un test marca los días en que una tecnología
-acumula mucha actividad de `push` con *pull requests* casi ausentes — la firma de la
-**automatización** (bots o CI que empujan *commits* sin revisión), que no es
-desarrollo humano pero infla la actividad. Sobre los datos reales el test señala
-**dbt el 2026-06-01: 931 pushes y 0 PRs**, un día que vale **22 veces la mediana
-diaria de ese mes**. Es el mismo desbalance `push ≫ PR` que el desglose por tipo de
-evento del dashboard hace visible: sin este aviso, ese pico se leería como desarrollo
-genuino.
-
-El test opera a grano **diario** por diseño: sobre el agregado mensual, ese día pasa
-inadvertido. Junio suma 2260 eventos, casi los mismos que abril (2319) — pero 990 de
-ellos son del día 1. Descontándolo, junio va a 44 eventos diarios frente a los 77 de
-abril. Un agregado suficientemente grueso siempre acaba dando el visto bueno.
-
-```bash
-make dbt-deps    # instala dbt-expectations (packages.yml), una sola vez
-make dbt-build   # construye el Gold y ejecuta TODOS los tests (estructurales + anomalías)
-make dbt-test    # solo los tests, sobre el Gold ya construido
-```
-
-> Los tests que dependen de datos corren en local (`dbt build`/`dbt test`); la CI
-> valida el proyecto dbt sin conexión (`dbt parse`), como el resto del modelado.
-
-### Hallazgo: la actividad de estos repositorios se está automatizando
-
-El desglose por tipo de evento a lo largo del trimestre analizado muestra un
-desplazamiento sostenido del trabajo humano al automatizado:
-
-| mes | pull_request | push | release | watch | % humano |
-|---|---|---|---|---|---|
-| abril | 1014 | 1056 | 7 | 242 | 44 % |
-| mayo | 671 | 1430 | 4 | 137 | 30 % |
-| junio | 184 | 2017 | 2 | 57 | 8 % |
-
-`pull_request` cae en las cinco tecnologías (entre −66 % y −100 %) y `watch` un 76 %,
-mientras `push` se dispara. **No es que GitHub estuviera más tranquilo:** los ficheros
-horarios del origen traen 158 392 eventos en abril y 157 497 en junio. Son estos cinco
-repositorios los que se han vuelto *push-only*.
-
-El dato está verificado contra la fuente: se contrastó el crudo de GH Archive con la
-capa Silver para horas concretas, y los conteos coinciden evento a evento. La caída
-está en el origen, no en el pipeline.
-
-Conviene además desglosar por tecnología antes de leer el agregado: el crecimiento de
-`push` es casi todo de un solo repositorio (dbt, ×12 entre abril y junio). Descontándolo,
-junio suma 944 *pushes* contra 968 en abril — plano.
-
-### Métricas compuestas: por qué no existen
-
-Se evaluó un *Momentum Score* que combinara actividad (GitHub) y adopción (PyPI) por
-tecnología. Se descartó tras medir las señales, y el motivo merece contarse.
-
-Las dos fuentes miden magnitudes incomparables: descargas en cientos de millones frente
-a eventos en decenas por día. Lo único que se puede componer entre ellas son **tasas de
-variación** adimensionales, nunca los niveles. Y toda tasa necesita un denominador con
-volumen suficiente — que la señal de desarrollo humano no tiene: los cinco repositorios
-suman **13 releases en todo el trimestre**, y `dagster-io/dagster` registra entre 0 y 8
-*pull requests* al mes. Un cociente sobre contadores de una cifra no mide impulso, mide
-ruido de muestreo. No lo arregla ampliar el histórico: tres meses es la ventana completa.
-
-La divergencia entre *cuánto se construye* una herramienta y *cuánto se usa* —el hallazgo
-que el score pretendía resumir en un número— ya está disponible sin él: los rankings de
-actividad y de adopción se comparan directamente en el dashboard, cada uno en su escala
-y sin promediarlos. Un índice que promedia dos señales incomparables esconde más de lo
-que explica.
-
-### Consulta con Athena
-
-El Gold en S3 se registra en el Glue Data Catalog para consultarlo desde Athena, que
-lee Delta de forma nativa (sin generar manifiestos):
-
-```bash
-make athena-register    # registra las tablas Gold en Glue (solo la primera vez)
-```
-
-> El registro es de **una sola vez**: tras cada `dbt build` posterior, Athena ya lee
-> la versión nueva de cada tabla directamente del log de transacciones de Delta, sin
-> necesidad de volver a registrarla.
-
-A partir de ahí Athena responde la pregunta de V1 agregando el hecho por día y
-tecnología, dentro del tope de datos escaneados del workgroup.
-
-### Dashboard
-
-Un dashboard en Streamlit, en local, lee la capa Gold desde Athena y muestra la
-evolución diaria de actividad por tecnología para un rango de fechas seleccionable,
-con el total de eventos por tecnología en ese rango:
-
-```bash
-make dashboard
-```
-
-> Usa el perfil AWS `dev-trends-pipeline` y el mismo workgroup/base de datos de
-> Athena que el resto del pipeline. La consulta se cachea en la sesión de Streamlit
-> para no volver a escanear datos en cada interacción.
-
-![Dashboard: evolución diaria de actividad de desarrollo](docs/dashboard-streamlit.png)
-
-### Dashboard analítico en Power BI
-
-El dashboard definitivo de la ampliación (`dashboard/powerbi/`) lee la capa Gold
-desde Athena: los agregados se cargan una vez y toda la
-interacción es local, sin re-escanear Athena. Se conecta con un usuario IAM de
-**solo lectura** dedicado (mínimo privilegio).
-Cruza `fact_github_activity` (actividad) y `fact_pypi_downloads` (adopción) sobre
-las dimensiones conformadas, en tres páginas:
-
-1. **Comparativa** — rankings de actividad (GitHub) vs adopción (PyPI) por
-   tecnología para el periodo seleccionado. Al elegir una tecnología se resalta en
-   ambos rankings y las tarjetas y el logo se adaptan a ella.
-2. **Tendencia en el tiempo** — *small multiples* de las cinco tecnologías, cada
-   serie normalizada a su propio máximo (media móvil de 7 días, % del pico): compara
-   la **dirección** de actividad y adopción en el tiempo, no su magnitud.
-3. **Detalle por tecnología** (*drillthrough*) — al profundizar en una tecnología:
-   su posición en cada ranking, el **desglose por tipo de evento** (push, pull
-   request, release, watch) y su tendencia. El desglose expone la *calidad* de la
-   actividad: pushes ≈ PRs refleja desarrollo humano; pushes ≫ PRs delata
-   automatización, no desarrollo real.
-
-![Comparativa: actividad vs adopción por tecnología](dashboard/powerbi/screenshots/pagina-1-comparativa.png)
-![Tendencia normalizada por tecnología](dashboard/powerbi/screenshots/pagina-2-tendencia.png)
-![Detalle por tecnología con desglose por tipo de evento](dashboard/powerbi/screenshots/pagina-3-detalle.png)
-
-> La conexión se configura con un DSN ODBC de Athena
-
-### Infraestructura AWS con Terraform (Fase 4)
-
-La infraestructura de almacenamiento y consulta se declara como código en `infra/`:
-los buckets S3 del medallion y de resultados de Athena, la base de datos del Glue
-Data Catalog, el workgroup de Athena (con tope de datos escaneados como guarda de
-coste), dos usuarios IAM de mínimo privilegio —uno de lectura y escritura para el
-pipeline, y otro de **solo lectura** para el dashboard de Power BI, limitado a
-consultar Athena y leer la capa Gold— y una alerta de presupuesto mensual.
-
-```bash
-cd infra
-cp example.tfvars terraform.tfvars   # y pon tu email para la alerta de presupuesto
-terraform init
-terraform plan
-terraform apply
-```
-
-> Requiere credenciales de AWS con permisos para crear estos recursos. El estado de
-> Terraform (`terraform.tfstate`), el `terraform.tfvars` y cualquier `*.tfvars` con
-> valores propios **no se versionan**; sí se versiona `example.tfvars` como plantilla.
-
-Para revisar el proyecto **sin credenciales** (igual que la CI):
-
-```bash
-cd infra
-terraform fmt -check
-terraform init -backend=false
-terraform validate
-```
+</details>
 
 ---
 
 ## Calidad de código
 
-El proyecto sigue prácticas estándar de la industria:
+El proyecto sigue prácticas estándar de la industria, verificadas en CI en cada
+*push* y *pull request*:
 
-- Formateo y linting con `ruff`
+- Formateo y *linting* con `ruff`
 - Tests con `pytest`
-- Hooks de `pre-commit`
+- *Hooks* de `pre-commit`
 - Tareas comunes automatizadas con `Makefile`
-- Integración continua con GitHub Actions (lint, tests y validación de Terraform en cada push/PR)
+- Integración continua con GitHub Actions: *lint*, tests, `dbt parse` y validación de
+  Terraform (`fmt` + `validate`)
+
+---
+
+## Posibles evoluciones
+
+Fronteras de alcance decididas conscientemente, no tareas pendientes:
+
+- **Catálogo completo de tecnologías** (Backend, IA). El pipeline ya es agnóstico al
+  número de repositorios —ampliarlo son filas en un *seed*, sin código nuevo—, pero
+  obliga a reingerir la ventana completa de GH Archive, porque el filtrado por
+  tecnología precede a la capa Silver.
+- **Más *topics* en Kafka** (`pypi-releases`, `technology-metadata`). Las *releases*
+  de PyPI se obtienen de una API REST paginada, no de un flujo continuo: publicarlas
+  repetiría el patrón del productor existente sin ejercitar nada nuevo.
+- **Más fuentes de adopción**: Docker Hub, npm, Maven Central.
 
 ---
 
